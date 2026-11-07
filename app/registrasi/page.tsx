@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Brand } from "../components/brand";
+import { apiJson, apiRequest } from "../lib/api";
 
 export default function RegistrationPage() {
+  const router = useRouter();
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const formData = new FormData(event.currentTarget);
@@ -16,9 +20,23 @@ export default function RegistrationPage() {
       return;
     }
 
-    setMessage(
-      "Formulir sudah lengkap. Pendaftaran akun akan tersedia setelah layanan server dihubungkan.",
-    );
+    setMessage("");
+    setIsSubmitting(true);
+    try {
+      await apiRequest("/api/auth", apiJson("POST", {
+        action: "register",
+        name: formData.get("name"),
+        username: formData.get("username"),
+        email: formData.get("email"),
+        phone: formData.get("phone"),
+        address: formData.get("address"),
+        password: formData.get("password"),
+      }));
+      router.push("/customer");
+    } catch (requestError) {
+      setMessage(requestError instanceof Error ? requestError.message : "Pendaftaran gagal. Silakan coba kembali.");
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -74,6 +92,10 @@ export default function RegistrationPage() {
             />
           </label>
           <label className="form-field">
+            <span>Alamat</span>
+            <input autoComplete="street-address" maxLength={100} name="address" placeholder="Alamat lengkap" required />
+          </label>
+          <label className="form-field">
             <span>Password</span>
             <input
               autoComplete="new-password"
@@ -97,13 +119,13 @@ export default function RegistrationPage() {
           </label>
 
           {message ? (
-            <p className="form-notice" role="status">
+            <p className="form-error" role="alert">
               {message}
             </p>
           ) : null}
 
-          <button className="button button-primary form-submit">
-            Daftar sebagai Customer
+          <button className="button button-primary form-submit" disabled={isSubmitting}>
+            {isSubmitting ? "Memproses..." : "Daftar sebagai Customer"}
             <span aria-hidden="true">→</span>
           </button>
         </form>

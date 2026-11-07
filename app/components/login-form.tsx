@@ -4,15 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { roleHome, roleLabels, UserRole } from "../lib/roles";
+import { apiJson, apiRequest } from "../lib/api";
 
 type LoginFormProps = {
   role: UserRole;
-};
-
-type LoginSession = {
-  username: string;
-  role: UserRole;
-  loggedInAt: string;
 };
 
 export default function LoginForm({ role }: LoginFormProps) {
@@ -22,7 +17,7 @@ export default function LoginForm({ role }: LoginFormProps) {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
@@ -34,15 +29,14 @@ export default function LoginForm({ role }: LoginFormProps) {
     setIsSubmitting(true);
 
     try {
-      const session: LoginSession = {
+      await apiRequest("/api/auth", apiJson("POST", {
         username: username.trim(),
+        password,
         role,
-        loggedInAt: new Date().toISOString(),
-      };
-      window.localStorage.setItem("amalakufood-session", JSON.stringify(session));
+      }));
       router.push(roleHome(role));
-    } catch {
-      setError("Sesi tidak dapat disimpan di browser ini. Periksa pengaturan penyimpanan.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Login gagal. Silakan coba kembali.");
       setIsSubmitting(false);
     }
   }
@@ -114,9 +108,6 @@ export default function LoginForm({ role }: LoginFormProps) {
           </Link>
         </p>
       ) : null}
-      <p className="prototype-notice">
-        Mode pratinjau: login frontend belum memvalidasi akun ke server.
-      </p>
     </section>
   );
 }

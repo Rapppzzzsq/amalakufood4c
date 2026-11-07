@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brand } from "./brand";
 import { Modal, ModalTone } from "./modal";
+import { apiJson, apiRequest, ApiRequestError } from "../lib/api";
 
-type Category = "Bolu" | "Brownies";
+type Category = string;
 type View = "Beranda" | "Katalog" | "Riwayat" | "Keranjang" | "Profil";
 type PaymentMethod = "QRIS" | "Transfer Bank" | "Bayar di Toko";
 type Product = {
@@ -28,20 +29,6 @@ type Order = {
   status: string;
   items: string[];
 };
-
-const products: Product[] = [
-  { id: "PRD-001", name: "Bolu Tapai", category: "Bolu", price: 55000, stock: 12, description: "Bolu lembut dengan tapai pilihan, harum, manis, dan dipanggang segar setiap hari.", visual: "🍰", art: "gold" },
-  { id: "PRD-002", name: "Brownies Kukus", category: "Brownies", price: 65000, stock: 8, description: "Brownies cokelat kukus yang moist dengan rasa cokelat pekat di setiap gigitan.", visual: "🍫", art: "chocolate" },
-  { id: "PRD-003", name: "Bolu Pisang", category: "Bolu", price: 48000, stock: 15, description: "Bolu pisang rumahan yang lembut dengan aroma pisang matang yang menggoda.", visual: "🍌", art: "banana" },
-  { id: "PRD-004", name: "Brownies Pisang", category: "Brownies", price: 70000, stock: 6, description: "Perpaduan brownies cokelat kaya rasa dengan pisang pilihan.", visual: "🍫", art: "berry" },
-  { id: "PRD-005", name: "Bolu Pandan", category: "Bolu", price: 52000, stock: 10, description: "Bolu pandan harum bertekstur ringan, cocok untuk menemani waktu santai.", visual: "🍰", art: "pandan" },
-  { id: "PRD-006", name: "Brownies Panggang", category: "Brownies", price: 68000, stock: 9, description: "Brownies panggang dengan lapisan atas renyah dan bagian dalam yang fudgy.", visual: "🍫", art: "brown" },
-];
-
-const initialOrders: Order[] = [
-  { id: "PS-024", receipt: "NT-024", date: "7 November 2026", total: 120000, status: "Selesai", items: ["Bolu Tapai", "Brownies Kukus"] },
-  { id: "PS-018", receipt: "NT-018", date: "2 November 2026", total: 55000, status: "Diproses", items: ["Bolu Tapai"] },
-];
 
 const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
@@ -65,15 +52,19 @@ export default function CustomerDashboard() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [detailQuantity, setDetailQuantity] = useState(1);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [orders, setOrders] = useState(initialOrders);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("QRIS");
   const [checkout, setCheckout] = useState(false);
   const [profile, setProfile] = useState({
-    name: "Amalia Putri",
-    address: "Jl. Kue Amala No. 12, Padang",
-    phone: "0812 3456 7890",
-    username: "amalia.putri",
-    email: "amalia@example.com",
+    name: "",
+    address: "",
+    phone: "",
+    username: "",
+    email: "",
   });
   const [profileDraft, setProfileDraft] = useState(profile);
   const [modal, setModal] = useState<{
@@ -83,13 +74,64 @@ export default function CustomerDashboard() {
     action?: "logout";
   } | null>(null);
 
+  const reloadData = useCallback(async () => {
+    try {
+      const [{ user }, { products: productRows }, { orders: orderRows }] = await Promise.all([
+        apiRequest<{ user: { role: string; name: string; address?: string; phone: string; username: string; email: string } }>("/api/auth"),
+        apiRequest<{ products: Omit<Product, "visual" | "art">[] }>("/api/produk"),
+        apiRequest<{ orders: { id: string; receipt: string; date: string; total: number; status: string; items: { product: string; quantity: number }[] }[] }>("/api/pesanan"),
+      ]);
+      setLoadError("");
+      if (user.role !== "customer") {
+        router.replace("/login?role=customer");
+        return;
+      }
+
+      const customerProfile = {
+        name: user.name,
+        address: user.address ?? "",
+        phone: user.phone,
+        username: user.username,
+        email: user.email,
+      };
+      setProfile(customerProfile);
+      setProfileDraft(customerProfile);
+      setProducts(productRows.map((product) => {
+        const name = product.name.toLowerCase();
+        return {
+          ...product,
+          visual: name.includes("pisang") ? "🍌" : product.category.toLowerCase() === "brownies" ? "🍫" : "🍰",
+          art: name.includes("pandan") ? "pandan" : name.includes("pisang") ? "banana" : product.category.toLowerCase() === "brownies" ? "chocolate" : "gold",
+        };
+      }));
+      setOrders(orderRows.map((order) => ({
+        ...order,
+        date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(order.date)),
+        items: order.items.map((item) => `${item.product} × ${item.quantity}`),
+      })));
+    } catch (error) {
+      if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
+        router.replace("/login?role=customer");
+        return;
+      }
+      setLoadError(error instanceof Error ? error.message : "Data tidak dapat dimuat.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void reloadData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [reloadData]);
+
   const filteredProducts = useMemo(
     () =>
       products.filter((product) => {
         const categoryMatch = category === "Semua" || product.category === category;
         return categoryMatch && product.name.toLowerCase().includes(search.toLowerCase());
       }),
-    [category, search],
+    [category, products, search],
   );
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const total = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0);
@@ -121,41 +163,56 @@ export default function CustomerDashboard() {
     );
   }
 
-  function placeOrder(event: FormEvent<HTMLFormElement>) {
+  async function placeOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const number = String(25 + orders.length).padStart(3, "0");
-    const order: Order = {
-      id: `PS-${number}`,
-      receipt: `NT-${number}`,
-      date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date()),
-      total,
-      status: paymentMethod === "Bayar di Toko" ? "Diproses" : "Menunggu Validasi",
-      items: cart.map((line) => `${line.product.name} × ${line.quantity}`),
-    };
-    setOrders((current) => [order, ...current]);
-    setCart([]);
-    setCheckout(false);
-    setView("Riwayat");
-    setModal({
-      title: "Pesanan berhasil!",
-      description: `Pesanan #${order.id} sudah dicatat. Simpan nomor nota ${order.receipt} untuk melihat pesananmu.`,
-      tone: "yellow",
-    });
+    const form = new FormData(event.currentTarget);
+    setIsSubmitting(true);
+    try {
+      const { order } = await apiRequest<{ order: { id: string; receipt: string } }>("/api/pesanan", apiJson("POST", {
+        items: cart.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
+        paymentMethod,
+        name: form.get("name"),
+        phone: form.get("phone"),
+        address: form.get("address"),
+      }));
+      await reloadData();
+      setCart([]);
+      setCheckout(false);
+      setView("Riwayat");
+      setModal({
+        title: "Pesanan berhasil!",
+        description: `Pesanan #${order.id} sudah dicatat. Simpan nomor nota ${order.receipt} untuk melihat pesananmu.`,
+        tone: "yellow",
+      });
+    } catch (error) {
+      setModal({ title: "Checkout gagal", description: error instanceof Error ? error.message : "Pesanan tidak dapat disimpan.", tone: "red" });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setProfile(profileDraft);
-    setModal({ title: "Profil berhasil diperbarui", description: "Perubahan informasi profilmu sudah tersimpan.", tone: "green" });
+    const password = new FormData(event.currentTarget).get("password");
+    try {
+      await apiRequest("/api/customer", apiJson("PUT", {
+        ...profileDraft,
+        ...(typeof password === "string" && password ? { password } : {}),
+      }));
+      await reloadData();
+      setModal({ title: "Profil berhasil diperbarui", description: "Perubahan informasi profilmu sudah tersimpan.", tone: "green" });
+    } catch (error) {
+      setModal({ title: "Profil tidak dapat diperbarui", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function modalAction() {
+  async function modalAction() {
     if (modal?.action === "logout") {
       try {
-        window.localStorage.removeItem("amalakufood-session");
+        await apiRequest("/api/auth", apiJson("POST", { action: "logout" }));
         router.push("/pilih-peran");
-      } catch {
-        setModal({ title: "Tidak dapat keluar", description: "Sesi browser tidak dapat dihapus. Silakan coba kembali.", tone: "red" });
+      } catch (error) {
+        setModal({ title: "Tidak dapat keluar", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
         return;
       }
     }
@@ -217,9 +274,9 @@ export default function CustomerDashboard() {
           <form className="checkout-layout" onSubmit={placeOrder}>
             <div className="checkout-form-card">
               <h3>Alamat pengiriman</h3>
-              <label className="form-field"><span>Nama penerima</span><input defaultValue={profile.name} required /></label>
-              <label className="form-field"><span>Nomor handphone</span><input defaultValue={profile.phone} required type="tel" /></label>
-              <label className="form-field"><span>Alamat lengkap</span><textarea defaultValue={profile.address} required rows={3} /></label>
+              <label className="form-field"><span>Nama penerima</span><input defaultValue={profile.name} name="name" required /></label>
+              <label className="form-field"><span>Nomor handphone</span><input defaultValue={profile.phone} name="phone" required type="tel" /></label>
+              <label className="form-field"><span>Alamat lengkap</span><textarea defaultValue={profile.address} maxLength={100} name="address" required rows={3} /></label>
               <h3 className="checkout-subheading">Metode pembayaran</h3>
               <div className="payment-options">
                 {(["QRIS", "Transfer Bank", "Bayar di Toko"] as const).map((method) => (
@@ -229,14 +286,14 @@ export default function CustomerDashboard() {
                   </label>
                 ))}
               </div>
-              {paymentMethod === "QRIS" ? <div className="qris-placeholder"><div aria-hidden="true" className="qris-symbol">▦</div><div><strong>Scan QRIS untuk membayar</strong><span>QR pembayaran demo · Total {rupiah(total)}</span></div></div> : null}
-              {paymentMethod === "Transfer Bank" ? <div className="payment-instructions"><strong>Transfer ke Bank Amala</strong><span>Nomor rekening demo: 1234 5678 9012</span></div> : null}
+              {paymentMethod === "QRIS" ? <div className="qris-placeholder"><div aria-hidden="true" className="qris-symbol">▦</div><div><strong>Scan QRIS untuk membayar</strong><span>Konfirmasi instruksi pembayaran dari Kasir · Total {rupiah(total)}</span></div></div> : null}
+              {paymentMethod === "Transfer Bank" ? <div className="payment-instructions"><strong>Transfer Bank</strong><span>Instruksi rekening akan dikonfirmasi oleh Kasir.</span></div> : null}
             </div>
             <aside className="order-summary-card">
               <h3>Ringkasan pesanan</h3>
               {cart.map((line) => <div className="summary-line" key={line.product.id}><span>{line.product.name} × {line.quantity}</span><strong>{rupiah(line.product.price * line.quantity)}</strong></div>)}
               <div className="summary-total"><span>Total</span><strong>{rupiah(total)}</strong></div>
-              <button className="button button-primary full-button" type="submit">Saya sudah bayar <span aria-hidden="true">→</span></button>
+              <button className="button button-primary full-button" disabled={isSubmitting} type="submit">{isSubmitting ? "Menyimpan pesanan..." : "Saya sudah bayar"} <span aria-hidden="true">→</span></button>
               <p className="summary-note">Pesanan akan dicatat untuk diperiksa oleh kasir.</p>
             </aside>
           </form>
@@ -314,11 +371,15 @@ export default function CustomerDashboard() {
         </div>
       </header>
       <div className="customer-main">
-        <div className="customer-greeting"><div><span className="eyebrow">{view === "Beranda" ? "Selamat datang, Amalia" : "Amalakufood"}</span><h1>{view === "Beranda" ? "Ada yang manis hari ini?" : view}</h1></div><span aria-hidden="true" className="greeting-decoration">✦</span></div>
-        {view === "Beranda" || view === "Katalog" ? renderCatalog() : null}
-        {view === "Keranjang" ? renderCart() : null}
-        {view === "Riwayat" ? renderHistory() : null}
-        {view === "Profil" ? renderProfile() : null}
+        <div className="customer-greeting"><div><span className="eyebrow">{view === "Beranda" ? `Selamat datang, ${profile.name || "Customer"}` : "Amalakufood"}</span><h1>{view === "Beranda" ? "Ada yang manis hari ini?" : view}</h1></div><span aria-hidden="true" className="greeting-decoration">✦</span></div>
+        {isLoading ? <div className="empty-state">Memuat data Amalakufood...</div> : null}
+        {loadError ? <div className="empty-state" role="alert">{loadError} <button className="text-link" onClick={() => void reloadData()}>Coba lagi</button></div> : null}
+        {!isLoading && !loadError ? <>
+          {view === "Beranda" || view === "Katalog" ? renderCatalog() : null}
+          {view === "Keranjang" ? renderCart() : null}
+          {view === "Riwayat" ? renderHistory() : null}
+          {view === "Profil" ? renderProfile() : null}
+        </> : null}
       </div>
       <footer className="customer-footer">Amalakufood · Fresh From Our Oven</footer>
 

@@ -1,53 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brand } from "./brand";
 import { Modal, ModalTone } from "./modal";
 import { UserRole } from "../lib/roles";
+import { apiJson, apiRequest, ApiRequestError } from "../lib/api";
 
 type StaffRole = Extract<UserRole, "admin" | "kasir" | "owner">;
 type ReportType = "Stok" | "Penjualan";
 type Product = { id: string; name: string; category: string; price: number; stock: number; description: string };
 type Customer = { id: string; name: string; phone: string; email: string; address: string; points: number };
-type Order = { id: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: string[] };
-type Report = { id: string; type: ReportType; period: string; amount: string; status: string };
+type Order = { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: string[]; itemDetails?: { product: string; quantity: number; subtotal: number }[] };
+type Report = { id: string; type: ReportType; period: string; amount: string; status: string; startDate?: string; endDate?: string };
 type Evaluation = { id: string; report: string; note: string; date: string };
 type Dialog = { title: string; description?: string; tone?: ModalTone; kind?: string; id?: string };
 
-const initialProducts: Product[] = [
-  { id: "PRD-001", name: "Bolu Tapai", category: "Bolu", price: 55000, stock: 12, description: "Bolu lembut dengan tapai pilihan." },
-  { id: "PRD-002", name: "Brownies Kukus", category: "Brownies", price: 65000, stock: 8, description: "Brownies cokelat kukus yang moist." },
-  { id: "PRD-003", name: "Bolu Pisang", category: "Bolu", price: 48000, stock: 15, description: "Bolu pisang rumahan yang lembut." },
-  { id: "PRD-004", name: "Brownies Pisang", category: "Brownies", price: 70000, stock: 6, description: "Brownies cokelat dengan pisang pilihan." },
-];
-const initialCustomers: Customer[] = [
-  { id: "CUS-001", name: "Amalia Putri", phone: "0812 3456 7890", email: "amalia@example.com", address: "Padang, Sumatera Barat", points: 120 },
-  { id: "CUS-002", name: "Rani Permata", phone: "0813 2222 3400", email: "rani@example.com", address: "Kuranji, Padang", points: 85 },
-  { id: "CUS-003", name: "Dinda Aulia", phone: "0821 7612 3000", email: "dinda@example.com", address: "Lubuk Begalung, Padang", points: 45 },
-];
-const initialOrders: Order[] = [
-  { id: "PS-024", customer: "Amalia Putri", date: "7 Nov 2026", total: 120000, status: "Diproses", payment: "QRIS", paymentStatus: "Menunggu", items: ["Bolu Tapai × 1", "Brownies Kukus × 1"] },
-  { id: "PS-023", customer: "Rani Permata", date: "7 Nov 2026", total: 65000, status: "Divalidasi", payment: "Transfer Bank", paymentStatus: "Berhasil", items: ["Brownies Kukus × 1"] },
-  { id: "PS-022", customer: "Dinda Aulia", date: "6 Nov 2026", total: 96000, status: "Selesai", payment: "Bayar di Toko", paymentStatus: "Berhasil", items: ["Bolu Pisang × 2"] },
-];
-const initialReports: Report[] = [
-  { id: "RS-001", type: "Stok", period: "November 2026", amount: "4 produk · 41 item", status: "Menunggu Pemeriksaan" },
-  { id: "RP-001", type: "Penjualan", period: "November 2026", amount: "12 transaksi · Rp 1.245.000", status: "Menunggu Pemeriksaan" },
-  { id: "RP-002", type: "Penjualan", period: "Oktober 2026", amount: "38 transaksi · Rp 3.850.000", status: "Disetujui" },
-];
-const initialEvaluations: Evaluation[] = [
-  { id: "EV-001", report: "RP-002", note: "Penjualan bulan ini meningkat. Pertahankan kualitas produk.", date: "1 Nov 2026" },
-];
-
 const money = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-
-function nextSequence(prefix: string, ids: string[]) {
-  let sequence = 1;
-  while (ids.includes(`${prefix}-${String(sequence).padStart(3, "0")}`)) sequence += 1;
-  return `${prefix}-${String(sequence).padStart(3, "0")}`;
-}
 
 function dashboardMenu(role: StaffRole) {
   if (role === "admin") return ["Beranda", "Data Produk", "Data Customer", "Profil Admin"];
@@ -62,44 +32,108 @@ function roleName(role: StaffRole) {
 export default function StaffDashboard({ role }: { role: StaffRole }) {
   const router = useRouter();
   const name = roleName(role);
-  const employeeId = role === "admin" ? "ADM001" : role === "kasir" ? "KSR001" : "OWN001";
+  const [employeeId, setEmployeeId] = useState("");
   const [view, setView] = useState("Beranda");
-  const [products, setProducts] = useState(initialProducts);
-  const [customers, setCustomers] = useState(initialCustomers);
-  const [orders, setOrders] = useState(initialOrders);
-  const [reports, setReports] = useState(initialReports);
-  const [evaluations, setEvaluations] = useState(initialEvaluations);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [orderSummary, setOrderSummary] = useState({ transactionCount: 0, totalSales: 0, todayTransactionCount: 0 });
   const [dialog, setDialog] = useState<Dialog | null>(null);
-  const profile = { name: `${name} Amalaku`, phone: "0812 3456 7890", email: `${role}@amalakufood.id` };
+  const [profile, setProfile] = useState({ name: "", phone: "", email: "" });
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [evaluationText, setEvaluationText] = useState("");
 
   const menu = dashboardMenu(role);
   const todayLabel = role === "admin" ? "Ruang kerja Amalakufood" : "Ringkasan kerja";
 
+  const loadData = useCallback(async () => {
+    try {
+      const { user } = await apiRequest<{ user: { role: string; profileId: string; name: string; phone: string; email: string } }>("/api/auth");
+      if (user.role !== role) {
+        router.replace(`/login?role=${role}`);
+        return;
+      }
+      setEmployeeId(user.profileId);
+      setProfile({ name: user.name, phone: user.phone, email: user.email });
+
+      const [productData, customerData, orderData, reportData] = await Promise.all([
+        apiRequest<{ products: Product[] }>("/api/produk"),
+        role === "admin" || role === "owner"
+          ? apiRequest<{ customers: Customer[] }>("/api/customer")
+          : Promise.resolve({ customers: [] as Customer[] }),
+        role === "kasir" || role === "owner"
+          ? apiRequest<{ orders: { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: { product: string; quantity: number; subtotal: number }[] }[]; summary: { transactionCount: number; totalSales: number; todayTransactionCount: number } }>("/api/pesanan")
+          : Promise.resolve({ orders: [] as { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: { product: string; quantity: number; subtotal: number }[] }[], summary: { transactionCount: 0, totalSales: 0, todayTransactionCount: 0 } }),
+        role === "kasir" || role === "owner"
+          ? apiRequest<{ reports: Report[]; evaluations: { id: string; report: string; note: string; date: string }[] }>("/api/laporan")
+          : Promise.resolve({ reports: [] as Report[], evaluations: [] as { id: string; report: string; note: string; date: string }[] }),
+      ]);
+      setProducts(productData.products);
+      setCustomers(customerData.customers);
+      setLoadError("");
+      setOrderSummary(orderData.summary);
+      setOrders(orderData.orders.map((order) => ({
+        ...order,
+        date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" }).format(new Date(order.date)),
+        items: order.items.map((item) => `${item.product} × ${item.quantity}`),
+        itemDetails: order.items,
+      })));
+      setReports(reportData.reports.map((report) => ({ ...report, type: report.type as ReportType })));
+      setEvaluations(reportData.evaluations.map((item) => ({
+        ...item,
+        date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.date)),
+      })));
+    } catch (error) {
+      if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
+        router.replace(`/login?role=${role}`);
+        return;
+      }
+      setLoadError(error instanceof Error ? error.message : "Data tidak dapat dimuat.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [role, router]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
+
   function closeDialog() {
     setDialog(null);
   }
 
   function openDelete(kind: string, id: string, label: string) {
-    setDialog({ title: `Hapus ${label}?`, description: `Data ${label.toLowerCase()} ini akan dihapus dari tampilan demo.`, kind: `delete-${kind}`, id });
+    setDialog({ title: `Hapus ${label}?`, description: `Data ${label.toLowerCase()} ini akan dihapus secara permanen.`, kind: `delete-${kind}`, id });
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!dialog?.id) return;
-    if (dialog.kind === "delete-product") setProducts((current) => current.filter((product) => product.id !== dialog.id));
-    if (dialog.kind === "delete-customer") setCustomers((current) => current.filter((customer) => customer.id !== dialog.id));
-    if (dialog.kind === "delete-order") setOrders((current) => current.filter((order) => order.id !== dialog.id));
-    if (dialog.kind === "delete-report") setReports((current) => current.filter((report) => report.id !== dialog.id));
-    if (dialog.kind === "delete-evaluation") setEvaluations((current) => current.filter((item) => item.id !== dialog.id));
-    setDialog({ title: "Data berhasil dihapus", description: "Perubahan tersimpan pada tampilan demo ini.", tone: "green" });
+    const config = {
+      "delete-product": ["/api/produk?id=", "report"] as const,
+      "delete-customer": ["/api/customer?id=", "report"] as const,
+      "delete-order": ["/api/pesanan?id=", "report"] as const,
+      "delete-report": ["/api/laporan?id=", "report"] as const,
+      "delete-evaluation": ["/api/laporan?kind=evaluation&id=", "report"] as const,
+    }[dialog.kind as "delete-product" | "delete-customer" | "delete-order" | "delete-report" | "delete-evaluation"];
+    if (!config) return;
+    try {
+      await apiRequest(`${config[0]}${encodeURIComponent(dialog.id)}`, { method: "DELETE" });
+      await loadData();
+      setDialog({ title: "Data berhasil dihapus", description: "Perubahan sudah tersimpan.", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Data tidak dapat dihapus", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function submitProduct(event: FormEvent<HTMLFormElement>) {
+  async function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const product: Product = {
-      id: dialog?.id ?? nextSequence("PRD", products.map((item) => item.id)),
+    const product = {
       name: String(form.get("name") ?? "").trim(),
       category: String(form.get("category") ?? ""),
       price: Number(form.get("price")),
@@ -107,91 +141,132 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       description: String(form.get("description") ?? "").trim(),
     };
     if (!product.name || !Number.isFinite(product.price) || !Number.isFinite(product.stock)) return;
-    setProducts((current) => dialog?.kind === "edit-product" ? current.map((item) => item.id === product.id ? product : item) : [...current, product]);
-    setDialog({ title: dialog?.kind === "edit-product" ? "Produk berhasil diperbarui" : "Produk berhasil ditambahkan", tone: "green" });
+    const editing = dialog?.kind === "edit-product";
+    try {
+      await apiRequest("/api/produk", apiJson(editing ? "PUT" : "POST", editing ? { id: dialog.id, ...product } : product));
+      await loadData();
+      setDialog({ title: editing ? "Produk berhasil diperbarui" : "Produk berhasil ditambahkan", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Produk tidak dapat disimpan", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function submitCustomer(event: FormEvent<HTMLFormElement>) {
+  async function submitCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!dialog?.id) return;
     const form = new FormData(event.currentTarget);
-    setCustomers((current) => current.map((customer) => customer.id === dialog.id ? {
-      ...customer,
+    const changes = {
       name: String(form.get("name") ?? ""),
       phone: String(form.get("phone") ?? ""),
       email: String(form.get("email") ?? ""),
       address: String(form.get("address") ?? ""),
-    } : customer));
-    setDialog({ title: "Data customer berhasil diperbarui", tone: "green" });
+    };
+    try {
+      await apiRequest("/api/customer", apiJson("PUT", { id: dialog.id, ...changes }));
+      await loadData();
+      setDialog({ title: "Data customer berhasil diperbarui", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Data customer tidak dapat disimpan", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function submitPoints(event: FormEvent<HTMLFormElement>) {
+  async function submitPoints(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!dialog?.id) return;
     const points = Number(new FormData(event.currentTarget).get("points"));
     if (!Number.isInteger(points) || points < 0) return;
-    setCustomers((current) => current.map((customer) => customer.id === dialog.id ? { ...customer, points } : customer));
-    setDialog({ title: "Poin berhasil diperbarui", tone: "green" });
+    try {
+      await apiRequest("/api/customer", apiJson("PUT", { action: "points", id: dialog.id, points }));
+      await loadData();
+      setDialog({ title: "Poin berhasil diperbarui", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Poin tidak dapat diperbarui", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function submitOrderStatus(event: FormEvent<HTMLFormElement>) {
+  async function submitOrderStatus(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!dialog?.id) return;
     const status = String(new FormData(event.currentTarget).get("status"));
-    setOrders((current) => current.map((order) => order.id === dialog.id ? { ...order, status } : order));
-    setDialog({ title: "Status pesanan berhasil diubah", tone: "green" });
+    try {
+      await apiRequest("/api/pesanan", apiJson("PUT", { id: dialog.id, action: "status", status }));
+      await loadData();
+      setDialog({ title: "Status pesanan berhasil diubah", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Status pesanan tidak dapat diubah", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function updateOrder(id: string, status: string, paymentStatus?: string) {
-    setOrders((current) => current.map((order) => order.id === id ? { ...order, status, paymentStatus: paymentStatus ?? order.paymentStatus } : order));
+  async function updateOrder(id: string, status: string, paymentStatus?: string) {
+    try {
+      const body = paymentStatus
+        ? { id, action: "payment", status: paymentStatus }
+        : { id, action: "validate", status };
+      await apiRequest("/api/pesanan", apiJson("PUT", body));
+      await loadData();
+      setDialog({ title: paymentStatus === "Ditolak" ? "Pembayaran Ditolak" : paymentStatus ? "Pembayaran berhasil divalidasi" : "Pesanan berhasil divalidasi", tone: paymentStatus === "Ditolak" ? "red" : "green" });
+    } catch (error) {
+      setDialog({ title: "Pesanan tidak dapat diperbarui", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function submitReport(event: FormEvent<HTMLFormElement>) {
+  async function submitReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const existingReport = reports.find((item) => item.id === dialog?.id);
     const reportType = existingReport?.type ?? (dialog?.kind === "report-stock" ? "Stok" : "Penjualan");
-    const report: Report = {
-      id: dialog?.id ?? nextSequence(reportType === "Stok" ? "RS" : "RP", reports.map((item) => item.id)),
+    const payload = {
       type: reportType,
       period: String(form.get("period") ?? ""),
-      amount: String(form.get("amount") ?? ""),
-      status: "Menunggu Pemeriksaan",
+      startDate: String(form.get("startDate") ?? ""),
+      endDate: String(form.get("endDate") ?? ""),
     };
-    setReports((current) => dialog?.id ? current.map((item) => item.id === report.id ? report : item) : [...current, report]);
-    setDialog({ title: dialog?.id ? "Laporan berhasil diperbarui" : "Laporan berhasil ditambahkan", tone: "green" });
+    try {
+      await apiRequest("/api/laporan", apiJson(dialog?.id ? "PUT" : "POST", dialog?.id
+        ? { action: "update-report", id: dialog.id, ...payload }
+        : { action: "report", ...payload }));
+      await loadData();
+      setDialog({ title: dialog?.id ? "Laporan berhasil diperbarui" : "Laporan berhasil ditambahkan", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Laporan tidak dapat disimpan", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
-  function submitEvaluation(event: FormEvent<HTMLFormElement>) {
+  async function submitEvaluation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const note = String(form.get("note") ?? "").trim();
     if (!note) return;
-    if (dialog?.kind === "edit-evaluation" && dialog.id) {
-      setEvaluations((current) => current.map((item) => item.id === dialog.id ? { ...item, note } : item));
-    } else {
-      setEvaluations((current) => [...current, {
-        id: `EV-${String(current.length + 1).padStart(3, "0")}`,
-        report: String(form.get("report") ?? "RP-001"),
-        note,
-        date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" }).format(new Date()),
-      }]);
-    }
-    setEvaluationText("");
-    setDialog({ title: "Evaluasi berhasil disimpan", tone: "green" });
-  }
-
-  function approveReport(report: Report) {
-    setReports((current) => current.map((item) => item.id === report.id ? { ...item, status: "Disetujui" } : item));
-    setDialog({ title: "Rekapan Laporan Disetujui", description: `${report.id} · ${report.period} sudah disetujui.`, tone: "green" });
-  }
-
-  function logout() {
+    const editing = dialog?.kind === "edit-evaluation" && dialog.id;
+    const reportId = String(form.get("report") ?? "");
     try {
-      window.localStorage.removeItem("amalakufood-session");
+      await apiRequest("/api/laporan", apiJson(editing ? "PUT" : "POST", editing
+        ? { action: "update-evaluation", id: dialog.id, note }
+        : { action: "evaluation", reportId, note }));
+      await loadData();
+      setEvaluationText("");
+      setDialog({ title: "Evaluasi berhasil disimpan", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Evaluasi tidak dapat disimpan", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
+  }
+
+  async function approveReport(report: Report) {
+    try {
+      await apiRequest("/api/laporan", apiJson("PUT", { action: "approve", reportId: report.id }));
+      await loadData();
+      setDialog({ title: "Rekapan Laporan Disetujui", description: `${report.id} · ${report.period} sudah disetujui.`, tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Laporan tidak dapat disetujui", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
+  }
+
+  async function logout() {
+    try {
+      await apiRequest("/api/auth", apiJson("POST", { action: "logout" }));
       router.push("/pilih-peran");
-    } catch {
-      setDialog({ title: "Tidak dapat keluar", description: "Sesi browser tidak dapat dihapus. Silakan coba kembali.", tone: "red" });
+    } catch (error) {
+      setDialog({ title: "Tidak dapat keluar", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
     }
   }
 
@@ -204,8 +279,8 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
     const cards = role === "admin"
       ? [{ label: "Produk aktif", value: String(products.length), icon: "✿" }, { label: "Customer", value: String(customers.length), icon: "♙" }]
       : role === "kasir"
-        ? [{ label: "Pesanan hari ini", value: String(orders.length), icon: "▤" }, { label: "Stok hari ini", value: String(products.reduce((sum, item) => sum + item.stock, 0)), icon: "▧" }]
-        : [{ label: "Penjualan", value: money(orders.reduce((sum, order) => sum + order.total, 0)), icon: "↗" }, { label: "Pesanan", value: String(orders.length), icon: "▤" }, { label: "Stok Menipis", value: String(products.filter((item) => item.stock < 8).length), icon: "!" }, { label: "Customer", value: String(customers.length), icon: "♙" }];
+        ? [{ label: "Pesanan hari ini", value: String(orderSummary.todayTransactionCount), icon: "▤" }, { label: "Stok hari ini", value: String(products.reduce((sum, item) => sum + item.stock, 0)), icon: "▧" }]
+        : [{ label: "Penjualan", value: money(orderSummary.totalSales), icon: "↗" }, { label: "Pesanan", value: String(orderSummary.transactionCount), icon: "▤" }, { label: "Stok Menipis", value: String(products.filter((item) => item.stock < 8).length), icon: "!" }, { label: "Customer", value: String(customers.length), icon: "♙" }];
     return (
       <>
         <section className="staff-welcome">
@@ -213,7 +288,7 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
           <span aria-hidden="true" className="welcome-cake">🧁</span>
         </section>
         <div className={`summary-grid summary-${role}`}>
-          {cards.map((card) => <article className="staff-summary-card" key={card.label}><span className="summary-icon">{card.icon}</span><span>{card.label}</span><strong>{card.value}</strong><small>Data demo saat ini</small></article>)}
+          {cards.map((card) => <article className="staff-summary-card" key={card.label}><span className="summary-icon">{card.icon}</span><span>{card.label}</span><strong>{card.value}</strong><small>Data terkini</small></article>)}
         </div>
         <section className="staff-recent"><div className="staff-section-heading"><div><span className="eyebrow">Aktivitas terbaru</span><h3>Pesanan terakhir</h3></div>{role === "kasir" ? <button className="text-link" onClick={() => setView("Transaksi Pemesanan")}>Lihat semua →</button> : null}</div>
           {orders.slice(0, 3).map((order) => <div className="recent-row" key={order.id}><span className="recent-order-mark">PS</span><span><strong>#{order.id}</strong><small>{order.customer} · {order.date}</small></span><strong>{money(order.total)}</strong><span className="status-pill">{order.status}</span></div>)}
@@ -250,12 +325,12 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
 
   function renderPaymentValidation() {
     const pending = orders.filter((order) => order.paymentStatus === "Menunggu");
-    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Periksa bukti transfer customer</span><h2>Validasi Pembayaran</h2></div><span className="count-badge">{pending.length} menunggu</span></div>{pending.length ? pending.map((order) => <article className="payment-review-card" key={order.id}><div className="payment-review-header"><div><span className="product-category">Pembayaran · {order.payment}</span><h3>Pesanan #{order.id}</h3><p>{order.customer} · {order.date}</p></div><strong>{money(order.total)}</strong></div><div className="payment-proof"><div aria-hidden="true" className="proof-placeholder">▧</div><div><strong>Bukti pembayaran customer</strong><span>Pratinjau bukti transfer · unggahan demo</span><span>Status: <b>Menunggu validasi</b></span></div></div><div className="payment-review-actions"><button className="button button-primary" onClick={() => { updateOrder(order.id, "Divalidasi", "Berhasil"); setDialog({ title: "Pembayaran Berhasil Divalidasi", description: `Pesanan #${order.id} sudah dikonfirmasi.`, tone: "green" }); }}>Validasi Pembayaran</button><button className="button button-danger" onClick={() => setDialog({ title: "Pembayaran Ditolak", description: `Tolak pembayaran untuk pesanan #${order.id}? Customer perlu mengirim ulang bukti pembayaran.`, tone: "red", kind: "reject-payment", id: order.id })}>Tolak Pembayaran</button></div></article>) : <div className="empty-state"><span>✓</span><h3>Semua pembayaran sudah diperiksa</h3><p>Tidak ada pembayaran yang menunggu validasi.</p></div>}</section>;
+    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Periksa status pembayaran customer</span><h2>Validasi Pembayaran</h2></div><span className="count-badge">{pending.length} menunggu</span></div>{pending.length ? pending.map((order) => <article className="payment-review-card" key={order.id}><div className="payment-review-header"><div><span className="product-category">Pembayaran · {order.payment}</span><h3>Pesanan #{order.id}</h3><p>{order.customer} · {order.date}</p></div><strong>{money(order.total)}</strong></div><div className="payment-proof"><div aria-hidden="true" className="proof-placeholder">▧</div><div><strong>Status pembayaran</strong><span>{order.payment === "Bayar di Toko" ? "Pembayaran dilakukan di toko." : "Bukti pembayaran belum dilampirkan."}</span><span>Status: <b>Menunggu validasi</b></span></div></div><div className="payment-review-actions"><button className="button button-primary" onClick={() => void updateOrder(order.id, "Divalidasi", "Berhasil")}>Validasi Pembayaran</button><button className="button button-danger" onClick={() => setDialog({ title: "Pembayaran Ditolak", description: `Tolak pembayaran untuk pesanan #${order.id}? Customer perlu mengirim ulang bukti pembayaran.`, tone: "red", kind: "reject-payment", id: order.id })}>Tolak Pembayaran</button></div></article>) : <div className="empty-state"><span>✓</span><h3>Semua pembayaran sudah diperiksa</h3><p>Tidak ada pembayaran yang menunggu validasi.</p></div>}</section>;
   }
 
   function renderReceipt() {
     const order = orders.find((item) => item.paymentStatus === "Berhasil") ?? orders[0];
-    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Bukti transaksi</span><h2>Bukti Pembayaran</h2></div></div><article className="receipt-card"><div className="receipt-head"><Brand /><span>NOTA PEMBAYARAN</span></div><div className="receipt-title"><span>Toko Kue Amala</span><h3>Nota #{order.id.replace("PS", "NT")}</h3><p>Fresh From Our Oven</p></div><div className="receipt-details"><div><span>ID Kasir</span><strong>KSR001</strong></div><div><span>Customer</span><strong>{order.customer}</strong></div><div><span>Tanggal</span><strong>{order.date}</strong></div></div><div className="receipt-items">{order.items.map((item) => <div key={item}><span>{item}</span><strong>{money(Math.floor(order.total / order.items.length))}</strong></div>)}</div><div className="receipt-total"><span>Total pembayaran</span><strong>{money(order.total)}</strong></div><div className="receipt-details"><div><span>Metode pembayaran</span><strong>{order.payment}</strong></div><div><span>Status</span><strong className="receipt-success">{order.paymentStatus}</strong></div></div><button className="button button-primary full-button" onClick={() => setDialog({ title: "Cetak Nota", description: "Nota siap dicetak sebagai bukti transaksi demo.", kind: "print-receipt" })}>Cetak Nota <span aria-hidden="true">▣</span></button></article></section>;
+    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Bukti transaksi</span><h2>Bukti Pembayaran</h2></div></div><article className="receipt-card"><div className="receipt-head"><Brand /><span>NOTA PEMBAYARAN</span></div><div className="receipt-title"><span>Toko Kue Amala</span><h3>Nota #{order.receipt || order.id.replace("PS", "NT")}</h3><p>Fresh From Our Oven</p></div><div className="receipt-details"><div><span>ID Kasir</span><strong>{employeeId}</strong></div><div><span>Customer</span><strong>{order.customer}</strong></div><div><span>Tanggal</span><strong>{order.date}</strong></div></div><div className="receipt-items">{order.itemDetails?.map((item) => <div key={item.product}><span>{item.product} × {item.quantity}</span><strong>{money(item.subtotal)}</strong></div>)}</div><div className="receipt-total"><span>Total pembayaran</span><strong>{money(order.total)}</strong></div><div className="receipt-details"><div><span>Metode pembayaran</span><strong>{order.payment}</strong></div><div><span>Status</span><strong className="receipt-success">{order.paymentStatus}</strong></div></div><button className="button button-primary full-button" onClick={() => setDialog({ title: "Cetak Nota", description: "Nota siap dicetak sebagai bukti transaksi.", kind: "print-receipt" })}>Cetak Nota <span aria-hidden="true">▣</span></button></article></section>;
   }
 
   function renderReports(type: ReportType, owner = false) {
@@ -267,7 +342,7 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
   }
 
   function renderEvaluations() {
-    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Catatan dan tindak lanjut</span><h2>Evaluasi Laporan</h2></div></div><form className="evaluation-compose" onSubmit={submitEvaluation}><label className="form-field"><span>Pilih laporan</span><select name="report" defaultValue="RP-001">{reports.map((report) => <option key={report.id} value={report.id}>{report.id} · {report.period}</option>)}</select></label><label className="form-field"><span>Catatan evaluasi</span><textarea name="note" onChange={(event) => setEvaluationText(event.target.value)} placeholder="Tulis catatan atau arahan untuk laporan..." required rows={3} value={evaluationText} /></label><button className="button button-primary">Simpan Evaluasi</button></form><div className="evaluation-list">{evaluations.map((item) => <article className="evaluation-card" key={item.id}><div className="evaluation-card-head"><span className="evaluation-id">{item.id}</span><span>{item.date} · {item.report}</span></div><p>{item.note}</p><div className="staff-card-actions"><button className="button button-soft" onClick={() => setDialog({ title: "Edit Evaluasi", kind: "edit-evaluation", id: item.id })}>Edit</button><button className="button button-danger" onClick={() => openDelete("evaluation", item.id, "Evaluasi")}>Hapus</button></div></article>)}</div></section>;
+    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Catatan dan tindak lanjut</span><h2>Evaluasi Laporan</h2></div></div><form className="evaluation-compose" onSubmit={submitEvaluation}><label className="form-field"><span>Pilih laporan</span><select name="report" defaultValue={reports[0]?.id ?? ""} required>{reports.length ? reports.map((report) => <option key={report.id} value={report.id}>{report.id} · {report.period}</option>) : <option disabled value="">Belum ada laporan untuk dievaluasi</option>}</select></label><label className="form-field"><span>Catatan evaluasi</span><textarea name="note" onChange={(event) => setEvaluationText(event.target.value)} placeholder="Tulis catatan atau arahan untuk laporan..." required rows={3} value={evaluationText} /></label><button className="button button-primary" disabled={!reports.length}>Simpan Evaluasi</button></form><div className="evaluation-list">{evaluations.map((item) => <article className="evaluation-card" key={item.id}><div className="evaluation-card-head"><span className="evaluation-id">{item.id}</span><span>{item.date} · {item.report}</span></div><p>{item.note}</p><div className="staff-card-actions"><button className="button button-soft" onClick={() => setDialog({ title: "Edit Evaluasi", kind: "edit-evaluation", id: item.id })}>Edit</button><button className="button button-danger" onClick={() => openDelete("evaluation", item.id, "Evaluasi")}>Hapus</button></div></article>)}</div></section>;
   }
 
   function renderProfile() {
@@ -292,9 +367,9 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       const order = orders.find((item) => item.id === dialog.id);
       actions = <form className="modal-form" onSubmit={submitOrderStatus}><div className="radio-status-list">{["Diproses", "Divalidasi", "Selesai"].map((status) => <label key={status}><input defaultChecked={order?.status === status} name="status" type="radio" value={status} /><span>{status}</span></label>)}</div><div className="modal-actions"><button className="button button-outline" onClick={closeDialog} type="button">Batal</button><button className="button button-primary" type="submit">Simpan Status</button></div></form>;
     } else if (dialog.kind === "validate-order") {
-      actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Batal</button><button className="button button-primary" onClick={() => { updateOrder(dialog.id ?? "", "Divalidasi"); setDialog({ title: "Pesanan berhasil divalidasi", tone: "green" }); }}>Validasi</button></div>;
+      actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Batal</button><button className="button button-primary" onClick={() => void updateOrder(dialog.id ?? "", "Divalidasi")}>Validasi</button></div>;
     } else if (dialog.kind === "reject-payment") {
-      actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Kembali</button><button className="button button-danger" onClick={() => { updateOrder(dialog.id ?? "", "Diproses", "Ditolak"); setDialog({ title: "Pembayaran Ditolak", description: "Status pembayaran diperbarui dan customer perlu mengirim bukti baru.", tone: "red" }); }}>Ya, Tolak Pembayaran</button></div>;
+      actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Kembali</button><button className="button button-danger" onClick={() => void updateOrder(dialog.id ?? "", "Diproses", "Ditolak")}>Ya, Tolak Pembayaran</button></div>;
     } else if (dialog.kind === "owner-report") {
       actions = <div className="modal-actions modal-actions-wrap"><button className="button button-outline" onClick={() => { const reportId = dialog.id; closeDialog(); setEvaluationText(""); setView("Evaluasi Laporan"); if (reportId) setEvaluationText(`Evaluasi ${reportId}: `); }}>Evaluasi</button><button className="button button-success" onClick={() => { const report = reports.find((item) => item.id === dialog.id); if (report) approveReport(report); }}>Setujui</button></div>;
     } else if (dialog.kind === "print-report" || dialog.kind === "print-receipt") {
@@ -303,8 +378,9 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       const report = reports.find((item) => item.id === dialog.id);
       const isEdit = Boolean(dialog.id);
       actions = <form className="modal-form" onSubmit={submitReport}>
-        <label className="form-field"><span>Periode</span><input defaultValue={report?.period ?? "November 2026"} name="period" required /></label>
-        <label className="form-field"><span>Ringkasan</span><input defaultValue={report?.amount ?? ""} name="amount" placeholder="Contoh: 8 transaksi · Rp 850.000" required /></label>
+        <label className="form-field"><span>Periode</span><input defaultValue={report?.period ?? new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(new Date())} name="period" required /></label>
+        <label className="form-field"><span>Tanggal awal</span><input defaultValue={report?.startDate?.slice(0, 10) ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`} name="startDate" required type="date" /></label>
+        <label className="form-field"><span>Tanggal akhir</span><input defaultValue={report?.endDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)} name="endDate" required type="date" /></label>
         <div className="modal-actions"><button className="button button-outline" onClick={closeDialog} type="button">Batal</button><button className="button button-primary" type="submit">{isEdit ? "Simpan Perubahan" : "Tambah Laporan"}</button></div>
       </form>;
     } else if (dialog.kind === "edit-evaluation" && evaluation) {
@@ -347,7 +423,11 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       </aside>
       <section className="staff-main">
         <header className="staff-topbar"><div className="staff-breadcrumb">Amalakufood <span>/</span> <strong>{view}</strong></div><div className="staff-topbar-actions"><span className="staff-date">{todayLabel}</span><span className="staff-top-avatar">{name.slice(0, 1)}</span></div></header>
-        <div className="staff-page-content">{viewContent()}</div>
+        <div className="staff-page-content">
+          {isLoading ? <div className="empty-state">Memuat data Amalakufood...</div> : null}
+          {loadError ? <div className="empty-state" role="alert">{loadError} <button className="text-link" onClick={() => void loadData()}>Coba lagi</button></div> : null}
+          {!isLoading && !loadError ? viewContent() : null}
+        </div>
         <footer className="staff-footer">Amalakufood · Fresh From Our Oven</footer>
       </section>
       {renderDialog()}
