@@ -217,11 +217,7 @@ INSERT INTO produk (id_produk, id_admin, nama_produk, kategori, harga, stok, des
 ('P001', 'ADM001', 'Bolu Tapai', 'Bolu', 45000, 12, 'Bolu tapai khas Minang dengan tekstur lembut dan rasa manis alami, dibuat segar setiap hari.'),
 ('P002', 'ADM001', 'Brownies Kukus', 'Brownies', 55000, 3, 'Brownies kukus cokelat pekat dengan tekstur lembut dan lumer di mulut.'),
 ('P003', 'ADM001', 'Bolu Pisang', 'Bolu', 45000, 8, 'Bolu pisang panggang beraroma harum dengan potongan pisang asli pilihan.'),
-('P004', 'ADM001', 'Brownies Pisang', 'Brownies', 55000, 12, 'Perpaduan brownies cokelat dan manisnya pisang segar khas Toko Kue Amala.'),
-('P005', 'ADM001', 'Bolu Cokelat', 'Bolu', 50000, 20, 'Bolu cokelat klasik favorit keluarga dengan taburan choco chips.'),
-('P006', 'ADM001', 'Bolu Keju', 'Bolu', 40000, 15, 'Bolu lembut dengan parutan keju cheddar melimpah di bagian atas.'),
-('P007', 'ADM001', 'Bolu Pandan', 'Bolu', 45000, 18, 'Bolu pandan wangi dengan warna hijau alami dan rasa gurih santan.'),
-('P008', 'ADM001', 'Bolu Karamel', 'Bolu', 55000, 12, 'Bolu sarang semut karamel dengan cita rasa manis legit yang khas.');
+('P004', 'ADM001', 'Brownies Pisang', 'Brownies', 55000, 12, 'Perpaduan brownies cokelat dan manisnya pisang segar khas Toko Kue Amala.');
  
 INSERT INTO pesanan (id_pesanan, id_customer, id_kasir, tanggal_pesanan, status_pesanan, total_tagihan) VALUES
 ('PS001', 'C001', 'KSR001', '2026-10-17', 'Diproses', 90000),
@@ -231,12 +227,12 @@ INSERT INTO pesanan (id_pesanan, id_customer, id_kasir, tanggal_pesanan, status_
 ('PS005', 'C005', 'KSR001', '2026-10-18', 'Selesai', 50000);
  
 INSERT INTO detail_pesanan (id_detail_pesanan, id_pesanan, id_produk, jumlah, harga_satuan, subtotal) VALUES
-('DP001', 'PS001', 'P005', 1, 50000, 50000),
-('DP002', 'PS001', 'P006', 1, 40000, 40000),
+('DP001', 'PS001', 'P001', 1, 50000, 50000),
+('DP002', 'PS001', 'P003', 1, 40000, 40000),
 ('DP003', 'PS002', 'P001', 1, 45000, 45000),
 ('DP004', 'PS003', 'P003', 1, 35000, 35000),
 ('DP005', 'PS004', 'P002', 1, 55000, 55000),
-('DP006', 'PS005', 'P005', 1, 50000, 50000);
+('DP006', 'PS005', 'P001', 1, 50000, 50000);
 
 INSERT INTO pembayaran (id_pembayaran, id_pesanan, metode_pembayaran, nominal_pembayaran, tanggal_bayar, status_pembayaran) VALUES
 ('BY001', 'PS001', 'QRIS', 90000, '2026-10-17', 'Berhasil'),
@@ -296,4 +292,3 @@ FROM produk pr
 JOIN detail_pesanan dp ON pr.id_produk = dp.id_produk
 GROUP BY pr.nama_produk
 ORDER BY total_pendapatan_produk DESC;
-

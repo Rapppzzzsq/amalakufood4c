@@ -81,9 +81,11 @@ input {
   color: var(--foreground);
 }
 
-.brand-mark svg {
+.brand-mark img {
+  display: block;
   width: 31px;
   height: 31px;
+  object-fit: contain;
 }
 
 .brand-splash {
@@ -102,7 +104,7 @@ input {
   box-shadow: 0 16px 38px rgb(92 44 22 / 10%);
 }
 
-.brand-splash .brand-mark svg {
+.brand-splash .brand-mark img {
   width: 78px;
   height: 78px;
 }
@@ -418,6 +420,25 @@ input {
   display: flex;
   justify-content: flex-end;
   margin-top: -7px;
+}
+
+.recovery-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.form-notice {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border: 1px solid rgb(22 163 74 / 20%);
+  border-radius: 12px;
+  background: rgb(22 163 74 / 8%);
+  color: #166534;
+  font-size: 0.83rem;
+  line-height: 1.55;
 }
 
 .text-link {
@@ -793,7 +814,7 @@ input {
   height: 38px;
 }
 
-.customer-logo .brand-mark svg {
+.customer-logo .brand-mark img {
   width: 28px;
   height: 28px;
 }
@@ -1002,34 +1023,20 @@ input {
   width: 200px;
   height: 200px;
   place-items: center;
-  transform: translateY(-50%) rotate(-7deg);
+  transform: translateY(-50%);
   border: 1px solid rgb(92 44 22 / 10%);
-  border-radius: 46% 54% 50% 50%;
+  border-radius: 50%;
   background: #ffdf71;
   box-shadow: 0 20px 34px rgb(92 44 22 / 11%);
 }
 
-.promo-cake span {
-  font-size: 7rem;
+.promo-cake img {
+  display: block;
+  width: 68%;
+  height: 68%;
+  border-radius: 50%;
+  object-fit: contain;
   filter: drop-shadow(0 10px 10px rgb(92 44 22 / 12%));
-}
-
-.promo-cake i,
-.promo-cake b {
-  position: absolute;
-  color: #fff9e8;
-  font-size: 1.7rem;
-  font-style: normal;
-}
-
-.promo-cake i {
-  top: 28px;
-  left: 27px;
-}
-
-.promo-cake b {
-  right: 24px;
-  bottom: 32px;
 }
 
 .promo-stamp {
@@ -1145,7 +1152,7 @@ input {
 .product-artwork {
   position: relative;
   display: grid;
-  min-height: 185px;
+  height: 185px;
   overflow: hidden;
   place-items: center;
   border-radius: 15px;
@@ -1154,72 +1161,11 @@ input {
     #f6dfa6;
 }
 
-.cake-chocolate {
-  background:
-    radial-gradient(circle at 50% 55%, rgb(255 255 255 / 76%) 0 35%, transparent 36%),
-    #d6b7a0;
-}
-
-.cake-banana {
-  background:
-    radial-gradient(circle at 50% 55%, rgb(255 255 255 / 83%) 0 35%, transparent 36%),
-    #e8d591;
-}
-
-.cake-berry {
-  background:
-    radial-gradient(circle at 50% 55%, rgb(255 255 255 / 78%) 0 35%, transparent 36%),
-    #dfc0ae;
-}
-
-.cake-pandan {
-  background:
-    radial-gradient(circle at 50% 55%, rgb(255 255 255 / 82%) 0 35%, transparent 36%),
-    #cbd9a8;
-}
-
-.cake-brown {
-  background:
-    radial-gradient(circle at 50% 55%, rgb(255 255 255 / 78%) 0 35%, transparent 36%),
-    #d3b39f;
-}
-
-.artwork-cake {
-  position: relative;
-  z-index: 1;
-  font-size: 5.7rem;
-  filter: drop-shadow(0 8px 7px rgb(75 42 21 / 13%));
-  transition: transform 180ms ease;
-}
-
-.product-card:hover .artwork-cake {
-  transform: scale(1.07) rotate(-4deg);
-}
-
-.artwork-spark {
-  position: absolute;
-  color: #fff;
-  font-size: 1.35rem;
-}
-
-.artwork-spark-one {
-  top: 23%;
-  left: 24%;
-}
-
-.artwork-spark-two {
-  right: 21%;
-  bottom: 27%;
-}
-
-.artwork-label {
-  position: absolute;
-  right: 11px;
-  bottom: 10px;
-  color: rgb(92 44 22 / 65%);
-  font-size: 0.62rem;
-  font-style: italic;
-  font-weight: 700;
+.product-photo {
+  display: block;
+  width: min(100%, 185px);
+  height: 100%;
+  object-fit: contain;
 }
 
 .product-meta {
@@ -1343,11 +1289,11 @@ input {
 }
 
 .cart-line .product-artwork {
-  min-height: 86px;
+  height: 86px;
 }
 
-.cart-line .artwork-cake {
-  font-size: 2.7rem;
+.cart-line .product-photo {
+  width: 100%;
 }
 
 .cart-line-info h3 {
@@ -1595,6 +1541,14 @@ input {
   font-size: 1.55rem;
 }
 
+.history-icon img {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
 .history-main {
   min-width: 0;
   flex: 1;
@@ -1724,11 +1678,7 @@ input {
 }
 
 .product-detail .product-artwork {
-  min-height: 130px;
-}
-
-.product-detail .artwork-cake {
-  font-size: 3.8rem;
+  height: 130px;
 }
 
 .detail-meta {
@@ -1995,11 +1945,27 @@ input {
 }
 
 .welcome-cake {
+  display: grid;
+  width: 128px;
+  height: 128px;
+  flex: 0 0 auto;
+  place-items: center;
   position: relative;
   z-index: 1;
   margin-right: 8%;
-  font-size: 5.3rem;
-  filter: drop-shadow(0 11px 9px rgb(92 44 22 / 13%));
+  border: 1px solid rgb(92 44 22 / 10%);
+  border-radius: 50%;
+  background: #ffdf71;
+  box-shadow: 0 18px 30px rgb(92 44 22 / 11%);
+}
+
+.welcome-cake img {
+  display: block;
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 10px rgb(92 44 22 / 12%));
 }
 
 .summary-grid {
@@ -2133,35 +2099,17 @@ input {
 }
 
 .staff-product-art {
-  position: relative;
   display: grid;
   min-height: 210px;
   place-items: center;
   background: #f4dfaa;
 }
 
-.staff-product-art span {
-  font-size: 4rem;
-  filter: drop-shadow(0 7px 5px rgb(75 42 21 / 13%));
-}
-
-.staff-product-art i {
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  color: #fff;
-}
-
-.staff-product-art.art-1 {
-  background: #ddc5b6;
-}
-
-.staff-product-art.art-2 {
-  background: #e8d99a;
-}
-
-.staff-product-art.art-3 {
-  background: #dfc5b4;
+.staff-product-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .staff-product-info {
@@ -2423,7 +2371,7 @@ input {
   height: 32px;
 }
 
-.receipt-head .brand-mark svg {
+.receipt-head .brand-mark img {
   width: 23px;
   height: 23px;
 }
@@ -2794,11 +2742,6 @@ input {
     right: -15px;
     width: 145px;
     height: 145px;
-    opacity: 0.7;
-  }
-
-  .promo-cake span {
-    font-size: 5rem;
   }
 
   .promo-stamp {
@@ -2812,11 +2755,7 @@ input {
   }
 
   .product-artwork {
-    min-height: 145px;
-  }
-
-  .artwork-cake {
-    font-size: 4.7rem;
+    height: 145px;
   }
 
   .cart-layout,
@@ -2854,7 +2793,7 @@ input {
     border-radius: 11px;
   }
 
-  .staff-brand .brand-mark svg {
+  .staff-brand .brand-mark img {
     width: 24px;
     height: 24px;
   }
@@ -2921,7 +2860,8 @@ input {
 
   .welcome-cake {
     margin-right: 0;
-    font-size: 3.8rem;
+    width: 96px;
+    height: 96px;
   }
 
   .staff-product-grid,
@@ -2976,12 +2916,7 @@ input {
     bottom: -16px;
     width: 112px;
     height: 112px;
-    transform: rotate(-7deg);
-    opacity: 0.6;
-  }
-
-  .promo-cake span {
-    font-size: 3.8rem;
+    transform: none;
   }
 
   .promo-stamp {
@@ -3017,11 +2952,7 @@ input {
   }
 
   .product-artwork {
-    min-height: 120px;
-  }
-
-  .artwork-cake {
-    font-size: 3.8rem;
+    height: 120px;
   }
 
   .product-meta {
@@ -3134,11 +3065,7 @@ input {
   }
 
   .product-detail .product-artwork {
-    min-height: 96px;
-  }
-
-  .product-detail .artwork-cake {
-    font-size: 2.8rem;
+    height: 96px;
   }
 
   .detail-actions {
@@ -3174,7 +3101,8 @@ input {
   }
 
   .welcome-cake {
-    font-size: 2.8rem;
+    width: 76px;
+    height: 76px;
   }
 
   .summary-grid,
@@ -3229,9 +3157,7 @@ input {
     min-height: 190px;
   }
 
-  .staff-product-art span {
-    font-size: 3rem;
-  }
+
 
   .staff-product-info {
     padding: 13px 11px;

@@ -86,6 +86,29 @@ export async function POST(request: Request) {
       return Response.json({ success: true }, { headers: { "Set-Cookie": clearSessionCookie(), "Cache-Control": "no-store" } });
     }
 
+    if (action === "request-password-reset") {
+      const username = requiredString(body.username, "Username", 50);
+      const user = await prisma.pengguna.findUnique({
+        where: { username },
+        select: { id_pengguna: true },
+      });
+      if (!user) throw new ApiError("Username tidak ditemukan.", 404);
+      return Response.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    if (action === "reset-password") {
+      const username = requiredString(body.username, "Username", 50);
+      const otp = requiredString(body.otp, "Kode OTP", 6);
+      if (otp !== "123456") throw new ApiError("Kode OTP tidak valid.", 400);
+      const password = requiredString(body.password, "Password baru", 100, 8);
+      await prisma.pengguna.update({
+        where: { username },
+        data: { password: await hashPassword(password) },
+        select: { id_pengguna: true },
+      });
+      return Response.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     assertSessionConfig();
 
     if (action === "register") {

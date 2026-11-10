@@ -79,13 +79,9 @@ export default function LoginForm({ role }: LoginFormProps) {
 
         <div className="form-options">
           <span />
-          <button
-            className="text-link recovery-link"
-            onClick={() => setError("Fitur pemulihan password belum tersedia.")}
-            type="button"
-          >
+          <Link className="text-link recovery-link" href="/lupa-password">
             Lupa Password?
-          </button>
+          </Link>
         </div>
 
         {error ? (

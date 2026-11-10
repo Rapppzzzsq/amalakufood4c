@@ -7,6 +7,7 @@ import { Brand } from "./brand";
 import { Modal, ModalTone } from "./modal";
 import { UserRole } from "../lib/roles";
 import { apiJson, apiRequest, ApiRequestError } from "../lib/api";
+import { getProductImage } from "../lib/product-assets";
 
 type StaffRole = Extract<UserRole, "admin" | "kasir" | "owner">;
 type ReportType = "Stok" | "Penjualan";
@@ -27,6 +28,16 @@ function dashboardMenu(role: StaffRole) {
 
 function roleName(role: StaffRole) {
   return role === "admin" ? "Admin" : role === "kasir" ? "Kasir" : "Owner";
+}
+
+function StaffProductImage({ product }: { product: Product }) {
+  const image = getProductImage(product.id, product.name);
+
+  return (
+    <div className="staff-product-art">
+      {image ? <img src={image} alt={product.name} /> : null}
+    </div>
+  );
 }
 
 export default function StaffDashboard({ role }: { role: StaffRole }) {
@@ -272,7 +283,18 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
 
   function printDocument(successTitle: string) {
     window.print();
-    setDialog({ title: successTitle, description: "Dokumen demo siap disimpan sebagai PDF atau dicetak dari browser.", tone: "green" });
+    setDialog({ title: successTitle, description: "Dokumen siap disimpan sebagai PDF atau dicetak dari dialog cetak browser.", tone: "green" });
+  }
+
+  async function printReceipt(orderId: string) {
+    try {
+      await apiRequest("/api/pesanan", apiJson("PUT", { id: orderId, action: "print" }));
+      window.print();
+      await loadData();
+      setDialog({ title: "Nota berhasil dicetak", description: "Tanggal cetak nota sudah disimpan.", tone: "green" });
+    } catch (error) {
+      setDialog({ title: "Nota tidak dapat dicetak", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
+    }
   }
 
   function renderOverview() {
@@ -285,7 +307,7 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       <>
         <section className="staff-welcome">
           <div><span className="eyebrow">{role === "owner" ? "Ringkasan usaha" : "Dashboard Amalakufood"}</span><h2>{role === "owner" ? `Halo, ${name} ${employeeId}` : `Selamat bekerja, ${name} ${employeeId}`}</h2><p>{role === "owner" ? "Pantau perkembangan usaha Toko Kue Amala hari ini." : "Semoga harimu produktif dan penuh hal manis."}</p></div>
-          <span aria-hidden="true" className="welcome-cake">🧁</span>
+          <span aria-hidden="true" className="welcome-cake"><img src="/logo-amala.png" alt="Logo Amalakufood" /></span>
         </section>
         <div className={`summary-grid summary-${role}`}>
           {cards.map((card) => <article className="staff-summary-card" key={card.label}><span className="summary-icon">{card.icon}</span><span>{card.label}</span><strong>{card.value}</strong><small>Data terkini</small></article>)}
@@ -302,8 +324,8 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       <section className="staff-content-section">
         <div className="staff-section-heading"><div><span className="eyebrow">{readOnly ? "Inventaris Toko Kue Amala" : "Kelola katalog"}</span><h2>{readOnly ? "Data Produk & Stok" : "Data Produk"}</h2></div>{!readOnly && role === "admin" ? <button className="button button-primary" onClick={() => setDialog({ title: "Tambah Produk", kind: "new-product" })}>＋ Tambah Produk</button> : null}</div>
         <div className="staff-product-grid">
-          {products.map((product, index) => <article className="staff-product-card" key={product.id}>
-            <div className={`staff-product-art art-${index % 4}`} aria-hidden="true"><span>{index % 2 ? "🍫" : "🍰"}</span><i>✦</i></div>
+          {products.map((product) => <article className="staff-product-card" key={product.id}>
+            <StaffProductImage product={product} />
             <div className="staff-product-info"><div className="staff-card-meta"><span className="product-category">{product.category}</span><span className={`stock-badge ${product.stock < 8 ? "stock-low" : ""}`}>{product.stock < 8 ? "Stok menipis" : `${product.stock} stok`}</span></div><h3>{product.name}</h3><p>{product.description}</p><strong>{money(product.price)}</strong>
               {!readOnly && role === "admin" ? <div className="staff-card-actions"><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Produk", kind: "edit-product", id: product.id })}>Ubah</button><button className="button button-danger" onClick={() => openDelete("product", product.id, "Produk")}>Hapus</button></div> : null}
             </div>
@@ -330,7 +352,10 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
 
   function renderReceipt() {
     const order = orders.find((item) => item.paymentStatus === "Berhasil") ?? orders[0];
-    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Bukti transaksi</span><h2>Bukti Pembayaran</h2></div></div><article className="receipt-card"><div className="receipt-head"><Brand /><span>NOTA PEMBAYARAN</span></div><div className="receipt-title"><span>Toko Kue Amala</span><h3>Nota #{order.receipt || order.id.replace("PS", "NT")}</h3><p>Fresh From Our Oven</p></div><div className="receipt-details"><div><span>ID Kasir</span><strong>{employeeId}</strong></div><div><span>Customer</span><strong>{order.customer}</strong></div><div><span>Tanggal</span><strong>{order.date}</strong></div></div><div className="receipt-items">{order.itemDetails?.map((item) => <div key={item.product}><span>{item.product} × {item.quantity}</span><strong>{money(item.subtotal)}</strong></div>)}</div><div className="receipt-total"><span>Total pembayaran</span><strong>{money(order.total)}</strong></div><div className="receipt-details"><div><span>Metode pembayaran</span><strong>{order.payment}</strong></div><div><span>Status</span><strong className="receipt-success">{order.paymentStatus}</strong></div></div><button className="button button-primary full-button" onClick={() => setDialog({ title: "Cetak Nota", description: "Nota siap dicetak sebagai bukti transaksi.", kind: "print-receipt" })}>Cetak Nota <span aria-hidden="true">▣</span></button></article></section>;
+    if (!order) {
+      return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Bukti transaksi</span><h2>Bukti Pembayaran</h2></div></div><div className="empty-state"><span>▤</span><h3>Belum ada transaksi</h3><p>Nota akan tersedia setelah customer membuat pesanan.</p></div></section>;
+    }
+    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Bukti transaksi</span><h2>Bukti Pembayaran</h2></div></div><article className="receipt-card"><div className="receipt-head"><Brand /><span>NOTA PEMBAYARAN</span></div><div className="receipt-title"><span>Toko Kue Amala</span><h3>Nota #{order.receipt || order.id.replace("PS", "NT")}</h3><p>Fresh From Our Oven</p></div><div className="receipt-details"><div><span>ID Kasir</span><strong>{employeeId}</strong></div><div><span>Customer</span><strong>{order.customer}</strong></div><div><span>Tanggal</span><strong>{order.date}</strong></div></div><div className="receipt-items">{order.itemDetails?.map((item) => <div key={item.product}><span>{item.product} × {item.quantity}</span><strong>{money(item.subtotal)}</strong></div>)}</div><div className="receipt-total"><span>Total pembayaran</span><strong>{money(order.total)}</strong></div><div className="receipt-details"><div><span>Metode pembayaran</span><strong>{order.payment}</strong></div><div><span>Status</span><strong className="receipt-success">{order.paymentStatus}</strong></div></div><button className="button button-primary full-button" onClick={() => setDialog({ title: "Cetak Nota", description: "Nota siap dicetak sebagai bukti transaksi.", kind: "print-receipt", id: order.id })}>Cetak Nota <span aria-hidden="true">▣</span></button></article></section>;
   }
 
   function renderReports(type: ReportType, owner = false) {
@@ -373,7 +398,7 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
     } else if (dialog.kind === "owner-report") {
       actions = <div className="modal-actions modal-actions-wrap"><button className="button button-outline" onClick={() => { const reportId = dialog.id; closeDialog(); setEvaluationText(""); setView("Evaluasi Laporan"); if (reportId) setEvaluationText(`Evaluasi ${reportId}: `); }}>Evaluasi</button><button className="button button-success" onClick={() => { const report = reports.find((item) => item.id === dialog.id); if (report) approveReport(report); }}>Setujui</button></div>;
     } else if (dialog.kind === "print-report" || dialog.kind === "print-receipt") {
-      actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Batal</button><button className="button button-primary" onClick={() => printDocument(dialog.kind === "print-report" ? "Laporan berhasil dicetak" : "Nota berhasil dicetak")}>Cetak sebagai PDF</button></div>;
+      actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Batal</button><button className="button button-primary" onClick={() => dialog.kind === "print-report" ? printDocument("Laporan berhasil dicetak") : void printReceipt(dialog.id ?? "")}>Cetak sebagai PDF</button></div>;
     } else if (dialog.kind === "report-stock" || dialog.kind === "report-penjualan" || dialog.kind?.startsWith("edit-report-")) {
       const report = reports.find((item) => item.id === dialog.id);
       const isEdit = Boolean(dialog.id);

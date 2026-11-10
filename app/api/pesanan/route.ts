@@ -196,6 +196,22 @@ async function updateOrder(request: Request) {
     const id = requiredString(body.id, "ID pesanan", 10);
     const action = body.action;
 
+    if (action === "print") {
+      await prisma.$transaction(async (tx) => {
+        const order = await tx.pesanan.findUnique({
+          where: { id_pesanan: id },
+          select: { pembayaran: { select: { id_pembayaran: true } } },
+        });
+        if (!order) throw new ApiError("Pesanan tidak ditemukan.", 404);
+        if (!order.pembayaran) throw new ApiError("Pembayaran untuk pesanan ini tidak ditemukan.", 409);
+        await tx.nota.update({
+          where: { id_pembayaran: order.pembayaran.id_pembayaran },
+          data: { tanggal_cetak: new Date() },
+        });
+      });
+      return Response.json({ success: true });
+    }
+
     if (action === "payment") {
       if (body.status !== "Berhasil" && body.status !== "Ditolak") {
         throw new ApiError("Status pembayaran tidak valid.", 400);

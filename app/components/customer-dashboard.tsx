@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Brand } from "./brand";
 import { Modal, ModalTone } from "./modal";
 import { apiJson, apiRequest, ApiRequestError } from "../lib/api";
+import { getProductImage } from "../lib/product-assets";
 
 type Category = string;
 type View = "Beranda" | "Katalog" | "Riwayat" | "Keranjang" | "Profil";
@@ -17,8 +18,6 @@ type Product = {
   price: number;
   stock: number;
   description: string;
-  visual: string;
-  art: string;
 };
 type CartLine = { product: Product; quantity: number };
 type Order = {
@@ -34,12 +33,11 @@ const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
 
 function ProductArtwork({ product }: { product: Product }) {
+  const image = getProductImage(product.id, product.name);
+
   return (
-    <div className={`product-artwork cake-${product.art}`} aria-hidden="true">
-      <span className="artwork-spark artwork-spark-one">✦</span>
-      <span className="artwork-spark artwork-spark-two">✧</span>
-      <span className="artwork-cake">{product.visual}</span>
-      <span className="artwork-label">Fresh baked</span>
+    <div className="product-artwork">
+      {image ? <img className="product-photo" src={image} alt={product.name} /> : null}
     </div>
   );
 }
@@ -78,7 +76,7 @@ export default function CustomerDashboard() {
     try {
       const [{ user }, { products: productRows }, { orders: orderRows }] = await Promise.all([
         apiRequest<{ user: { role: string; name: string; address?: string; phone: string; username: string; email: string } }>("/api/auth"),
-        apiRequest<{ products: Omit<Product, "visual" | "art">[] }>("/api/produk"),
+        apiRequest<{ products: Product[] }>("/api/produk"),
         apiRequest<{ orders: { id: string; receipt: string; date: string; total: number; status: string; items: { product: string; quantity: number }[] }[] }>("/api/pesanan"),
       ]);
       setLoadError("");
@@ -96,14 +94,7 @@ export default function CustomerDashboard() {
       };
       setProfile(customerProfile);
       setProfileDraft(customerProfile);
-      setProducts(productRows.map((product) => {
-        const name = product.name.toLowerCase();
-        return {
-          ...product,
-          visual: name.includes("pisang") ? "🍌" : product.category.toLowerCase() === "brownies" ? "🍫" : "🍰",
-          art: name.includes("pandan") ? "pandan" : name.includes("pisang") ? "banana" : product.category.toLowerCase() === "brownies" ? "chocolate" : "gold",
-        };
-      }));
+      setProducts(productRows);
       setOrders(orderRows.map((order) => ({
         ...order,
         date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(order.date)),
@@ -129,7 +120,9 @@ export default function CustomerDashboard() {
     () =>
       products.filter((product) => {
         const categoryMatch = category === "Semua" || product.category === category;
-        return categoryMatch && product.name.toLowerCase().includes(search.toLowerCase());
+        return getProductImage(product.id, product.name) !== null
+          && categoryMatch
+          && product.name.toLowerCase().includes(search.toLowerCase());
       }),
     [category, products, search],
   );
@@ -231,7 +224,7 @@ export default function CustomerDashboard() {
               Jelajahi katalog <span aria-hidden="true">→</span>
             </button>
           </div>
-          <div aria-hidden="true" className="promo-cake"><span>🍰</span><i>✦</i><b>♥</b></div>
+          <div aria-hidden="true" className="promo-cake"><img src="/logo-amala.png" alt="Logo Amalakufood" /></div>
           <div className="promo-stamp">Fresh<br />daily</div>
         </section>
         <section className="catalog-section">
@@ -331,7 +324,7 @@ export default function CustomerDashboard() {
         <div className="order-history-list">
           {orders.map((order) => (
             <article className="history-card" key={order.id}>
-              <div className="history-icon" aria-hidden="true">🧁</div>
+              <div className="history-icon" aria-hidden="true"><img src="/logo-amala.png" alt="Logo Amalakufood" /></div>
               <div className="history-main"><div className="history-title"><h3>#{order.id}</h3><span className={`status-pill ${order.status === "Selesai" ? "status-done" : ""}`}>{order.status}</span></div><p>{order.receipt} · {order.date}</p><span>{order.items.join(", ")}</span></div>
               <strong className="history-total">{rupiah(order.total)}</strong>
             </article>
