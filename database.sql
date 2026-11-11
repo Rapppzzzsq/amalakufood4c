@@ -125,7 +125,8 @@ CREATE TABLE pembayaran (
     nominal_pembayaran NUMERIC(12, 2) NOT NULL CHECK (nominal_pembayaran >= 0),
     tanggal_bayar DATE NOT NULL DEFAULT CURRENT_DATE,
     status_pembayaran VARCHAR(30) NOT NULL DEFAULT 'Menunggu'
-        CHECK (status_pembayaran IN ('Menunggu', 'Berhasil', 'Ditolak'))
+        CHECK (status_pembayaran IN ('Menunggu', 'Berhasil', 'Ditolak')),
+    konfirmasi_customer BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE nota (
@@ -148,7 +149,16 @@ CREATE TABLE laporan_kasir (
     total_stok INTEGER DEFAULT 0,
     jumlah_transaksi INTEGER DEFAULT 0,
     total_penjualan NUMERIC(14, 2) NOT NULL DEFAULT 0,
-    status_penjualan VARCHAR(30) NOT NULL DEFAULT 'Menunggu Pemeriksaan'
+    status_penjualan VARCHAR(30) NOT NULL DEFAULT 'Menunggu Pemeriksaan',
+    id_produk VARCHAR(10) REFERENCES produk(id_produk) ON UPDATE CASCADE ON DELETE SET NULL,
+    stok_awal INTEGER,
+    jumlah_keluar INTEGER,
+    stok_akhir INTEGER,
+    status_stok VARCHAR(20) CHECK (status_stok IN ('Aman', 'Menipis', 'Habis')),
+    catatan_kasir VARCHAR(255),
+    CHECK (stok_awal IS NULL OR stok_awal >= 0),
+    CHECK (jumlah_keluar IS NULL OR jumlah_keluar >= 0),
+    CHECK (stok_akhir IS NULL OR stok_akhir >= 0)
 );
 
 CREATE TABLE laporan_owner (
@@ -234,12 +244,12 @@ INSERT INTO detail_pesanan (id_detail_pesanan, id_pesanan, id_produk, jumlah, ha
 ('DP005', 'PS004', 'P002', 1, 55000, 55000),
 ('DP006', 'PS005', 'P001', 1, 50000, 50000);
 
-INSERT INTO pembayaran (id_pembayaran, id_pesanan, metode_pembayaran, nominal_pembayaran, tanggal_bayar, status_pembayaran) VALUES
-('BY001', 'PS001', 'QRIS', 90000, '2026-10-17', 'Berhasil'),
-('BY002', 'PS002', 'Transfer Bank', 45000, '2026-10-17', 'Berhasil'),
-('BY003', 'PS003', 'Bayar di Toko', 35000, '2026-10-17', 'Berhasil'),
-('BY004', 'PS004', 'QRIS', 55000, '2026-10-18', 'Menunggu'),
-('BY005', 'PS005', 'Transfer Bank', 50000, '2026-10-18', 'Berhasil');
+INSERT INTO pembayaran (id_pembayaran, id_pesanan, metode_pembayaran, nominal_pembayaran, tanggal_bayar, status_pembayaran, konfirmasi_customer) VALUES
+('BY001', 'PS001', 'QRIS', 90000, '2026-10-17', 'Berhasil', TRUE),
+('BY002', 'PS002', 'Transfer Bank', 45000, '2026-10-17', 'Berhasil', TRUE),
+('BY003', 'PS003', 'Bayar di Toko', 35000, '2026-10-17', 'Berhasil', TRUE),
+('BY004', 'PS004', 'QRIS', 55000, '2026-10-18', 'Menunggu', TRUE),
+('BY005', 'PS005', 'Transfer Bank', 50000, '2026-10-18', 'Berhasil', TRUE);
  
 INSERT INTO nota (id_nota, id_pembayaran, no_nota, tanggal_cetak) VALUES
 ('NT001', 'BY001', 'NOTA001', '2026-10-17'),

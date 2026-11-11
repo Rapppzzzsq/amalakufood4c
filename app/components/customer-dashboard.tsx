@@ -7,6 +7,7 @@ import { Brand } from "./brand";
 import { Modal, ModalTone } from "./modal";
 import { apiJson, apiRequest, ApiRequestError } from "../lib/api";
 import { getProductImage } from "../lib/product-assets";
+import { PasswordField } from "./password-field";
 
 type Category = string;
 type View = "Beranda" | "Katalog" | "Riwayat" | "Keranjang" | "Profil";
@@ -28,6 +29,11 @@ type Order = {
   status: string;
   items: string[];
 };
+type CheckoutOrder = { id: string; receipt: string; total: number; paymentMethod: PaymentMethod };
+const bankAccounts = [
+  { bank: "Bank BCA", number: "1234-567-890" },
+  { bank: "Bank Mandiri", number: "111-00-2233445-5" },
+];
 
 const rupiah = (value: number) =>
   new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
@@ -57,6 +63,9 @@ export default function CustomerDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("QRIS");
   const [checkout, setCheckout] = useState(false);
+  const [checkoutOrder, setCheckoutOrder] = useState<CheckoutOrder | null>(null);
+  const [copyNotice, setCopyNotice] = useState("");
+  const [copyFailed, setCopyFailed] = useState(false);
   const [profile, setProfile] = useState({
     name: "",
     address: "",
@@ -170,15 +179,41 @@ export default function CustomerDashboard() {
       }));
       await reloadData();
       setCart([]);
+      setCheckoutOrder({ id: order.id, receipt: order.receipt, total, paymentMethod });
+    } catch (error) {
+      setModal({ title: "Checkout gagal", description: error instanceof Error ? error.message : "Pesanan tidak dapat disimpan.", tone: "red" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function copyBankAccount(accountNumber: string) {
+    try {
+      await navigator.clipboard.writeText(accountNumber.replaceAll("-", ""));
+      setCopyFailed(false);
+      setCopyNotice("Nomor rekening disalin!");
+      window.setTimeout(() => setCopyNotice(""), 2500);
+    } catch (error) {
+      setCopyFailed(true);
+      setCopyNotice(error instanceof Error ? "Nomor rekening gagal disalin. Salin secara manual." : "Nomor rekening gagal disalin.");
+    }
+  }
+
+  async function confirmPayment() {
+    if (!checkoutOrder) return;
+    setIsSubmitting(true);
+    try {
+      await apiRequest("/api/pesanan", apiJson("PATCH", { id: checkoutOrder.id, action: "customer-confirm" }));
       setCheckout(false);
+      setCheckoutOrder(null);
       setView("Riwayat");
       setModal({
         title: "Pesanan berhasil!",
-        description: `Pesanan #${order.id} sudah dicatat. Simpan nomor nota ${order.receipt} untuk melihat pesananmu.`,
+        description: `Pesanan #${checkoutOrder.id} sudah dicatat. Pembayaran akan diperiksa Kasir. Nomor nota ${checkoutOrder.receipt}.`,
         tone: "yellow",
       });
     } catch (error) {
-      setModal({ title: "Checkout gagal", description: error instanceof Error ? error.message : "Pesanan tidak dapat disimpan.", tone: "red" });
+      setModal({ title: "Konfirmasi belum tersimpan", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
     } finally {
       setIsSubmitting(false);
     }
@@ -259,6 +294,60 @@ export default function CustomerDashboard() {
   }
 
   function renderCart() {
+    if (checkoutOrder) {
+      return (
+        <section className="customer-page-section payment-confirmation">
+          <button className="text-link back-to-cart" onClick={() => { setCheckoutOrder(null); setCheckout(false); setView("Riwayat"); }}>← Lihat riwayat pesanan</button>
+          <div className="section-heading"><div><span className="eyebrow">Pembayaran pesanan</span><h2>{checkoutOrder.paymentMethod}</h2></div></div>
+          <article className="payment-confirmation-card">
+            <div className="payment-reference">
+              <span>Kode pesanan / referensi</span>
+              <strong>#{checkoutOrder.id}</strong>
+              <small>No. nota {checkoutOrder.receipt}</small>
+            </div>
+            {checkoutOrder.paymentMethod === "QRIS" ? (
+              <div className="qris-payment">
+                <h3>Scan QRIS untuk membayar</h3>
+                <img src="/qris-amala.jpg" alt="QRIS Amalakufood" />
+                <p>Scan QRIS Toko Kue Amala di atas menggunakan aplikasi m-banking atau e-wallet Anda.</p>
+                <strong className="payment-amount">{rupiah(checkoutOrder.total)}</strong>
+              </div>
+            ) : null}
+            {checkoutOrder.paymentMethod === "Transfer Bank" ? (
+              <div className="bank-payment">
+                <h3>Rekening tujuan</h3>
+                <p className="bank-account-owner">a.n. <strong>Toko Kue Amala (Amalakufood)</strong></p>
+                {bankAccounts.map((account) => (
+                  <div className="bank-account" key={account.bank}>
+                    <span>{account.bank}</span>
+                    <strong>{account.number}</strong>
+                    <button className="button button-outline" onClick={() => void copyBankAccount(account.number)} type="button">Salin No. Rekening</button>
+                  </div>
+                ))}
+                {copyNotice ? <p className={`copy-notice ${copyFailed ? "copy-notice-error" : ""}`} role={copyFailed ? "alert" : "status"}>{copyNotice}</p> : null}
+                <p>Transfer sesuai total tagihan dan cantumkan kode pesanan sebagai referensi pembayaran.</p>
+                <div className="payment-total-row"><span>Kode referensi</span><strong>{checkoutOrder.id}</strong></div>
+                <div className="payment-total-row"><span>Total tagihan</span><strong>{rupiah(checkoutOrder.total)}</strong></div>
+              </div>
+            ) : null}
+            {checkoutOrder.paymentMethod === "Bayar di Toko" ? (
+              <div className="store-payment">
+                <h3>Pembayaran di Kasir</h3>
+                <p>Tunjukkan kode pesanan ini kepada kasir Toko Kue Amala saat mengambil pesanan. Siapkan pembayaran tunai sesuai total tagihan.</p>
+                <div className="payment-total-row"><span>Kode pesanan</span><strong>#{checkoutOrder.id}</strong></div>
+                <div className="payment-total-row"><span>Total tagihan tunai</span><strong>{rupiah(checkoutOrder.total)}</strong></div>
+              </div>
+            ) : null}
+            <button className="button button-primary full-button" disabled={isSubmitting} onClick={() => void confirmPayment()} type="button">
+              {isSubmitting ? "Menyimpan konfirmasi..." : checkoutOrder.paymentMethod === "Bayar di Toko" ? "Konfirmasi Pesanan" : "Saya Sudah Bayar"}
+              <span aria-hidden="true">→</span>
+            </button>
+            <p className="payment-review-note">Status pembayaran akan tetap menunggu verifikasi Kasir.</p>
+          </article>
+        </section>
+      );
+    }
+
     if (checkout) {
       return (
         <section className="customer-page-section">
@@ -279,15 +368,14 @@ export default function CustomerDashboard() {
                   </label>
                 ))}
               </div>
-              {paymentMethod === "QRIS" ? <div className="qris-placeholder"><div aria-hidden="true" className="qris-symbol">▦</div><div><strong>Scan QRIS untuk membayar</strong><span>Konfirmasi instruksi pembayaran dari Kasir · Total {rupiah(total)}</span></div></div> : null}
-              {paymentMethod === "Transfer Bank" ? <div className="payment-instructions"><strong>Transfer Bank</strong><span>Instruksi rekening akan dikonfirmasi oleh Kasir.</span></div> : null}
+              <div className="payment-total-row"><span>Total pembayaran</span><strong>{rupiah(total)}</strong></div>
             </div>
             <aside className="order-summary-card">
               <h3>Ringkasan pesanan</h3>
               {cart.map((line) => <div className="summary-line" key={line.product.id}><span>{line.product.name} × {line.quantity}</span><strong>{rupiah(line.product.price * line.quantity)}</strong></div>)}
               <div className="summary-total"><span>Total</span><strong>{rupiah(total)}</strong></div>
-              <button className="button button-primary full-button" disabled={isSubmitting} type="submit">{isSubmitting ? "Menyimpan pesanan..." : "Saya sudah bayar"} <span aria-hidden="true">→</span></button>
-              <p className="summary-note">Pesanan akan dicatat untuk diperiksa oleh kasir.</p>
+              <button className="button button-primary full-button" disabled={isSubmitting} type="submit">{isSubmitting ? "Menyimpan pesanan..." : "Buat Pesanan & Lanjutkan Pembayaran"} <span aria-hidden="true">→</span></button>
+              <p className="summary-note">Setelah pesanan dicatat, ikuti instruksi pembayaran dan konfirmasi untuk mengirimnya ke Kasir.</p>
             </aside>
           </form>
         </section>
@@ -384,7 +472,7 @@ export default function CustomerDashboard() {
       {modal ? <Modal description={modal.description} onClose={() => setModal(null)} title={modal.title} tone={modal.tone}>
         {modal.title === "Edit Profil" ? <form className="modal-form" onSubmit={saveProfile}>
           {(Object.entries(profileDraft) as [keyof typeof profileDraft, string][]).map(([field, value]) => <label className="form-field" key={field}><span>{field === "name" ? "Nama Lengkap" : field === "address" ? "Alamat" : field === "phone" ? "No. HP" : field === "username" ? "Username" : "Email"}</span><input onChange={(event) => setProfileDraft((current) => ({ ...current, [field]: event.target.value }))} required type={field === "email" ? "email" : "text"} value={value} /></label>)}
-          <label className="form-field"><span>Password baru (opsional)</span><input autoComplete="new-password" placeholder="Biarkan kosong jika tidak diubah" type="password" /></label>
+          <label className="form-field"><span>Password baru (opsional)</span><PasswordField autoComplete="new-password" name="password" placeholder="Biarkan kosong jika tidak diubah" /></label>
           <div className="modal-actions"><button className="button button-outline" onClick={() => setModal(null)} type="button">Cancel</button><button className="button button-primary" type="submit">Simpan</button></div>
         </form> : <div className="modal-actions">{modal.action === "logout" ? <><button className="button button-outline" onClick={() => setModal(null)}>Tidak</button><button className="button button-primary" onClick={modalAction}>Ya</button></> : <button className="button button-primary" onClick={modalAction}>Mengerti</button>}</div>}
       </Modal> : null}

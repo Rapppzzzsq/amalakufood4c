@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Brand } from "../components/brand";
+import { PasswordField } from "../components/password-field";
 import { apiJson, apiRequest } from "../lib/api";
 
 export default function RegistrationPage() {
@@ -97,24 +98,22 @@ export default function RegistrationPage() {
           </label>
           <label className="form-field">
             <span>Password</span>
-            <input
+            <PasswordField
               autoComplete="new-password"
               minLength={8}
               name="password"
               placeholder="Minimal 8 karakter"
               required
-              type="password"
             />
           </label>
           <label className="form-field">
             <span>Ulangi password</span>
-            <input
+            <PasswordField
               autoComplete="new-password"
               minLength={8}
               name="confirmPassword"
               placeholder="Masukkan kembali password"
               required
-              type="password"
             />
           </label>
 

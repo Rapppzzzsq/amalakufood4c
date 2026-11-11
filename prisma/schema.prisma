@@ -92,7 +92,14 @@ model laporan_kasir {
   jumlah_transaksi Int?            @default(0)
   total_penjualan  Decimal         @default(0) @db.Decimal(14, 2)
   status_penjualan String          @default("Menunggu Pemeriksaan") @db.VarChar(30)
+  id_produk        String?         @db.VarChar(10)
+  stok_awal        Int?
+  jumlah_keluar    Int?
+  stok_akhir       Int?
+  status_stok      String?         @db.VarChar(20)
+  catatan_kasir    String?         @db.VarChar(255)
   kasir            kasir           @relation(fields: [id_kasir], references: [id_kasir])
+  produk           produk?         @relation(fields: [id_produk], references: [id_produk], onDelete: SetNull)
   laporan_owner    laporan_owner[]
 }
 
@@ -135,6 +142,7 @@ model pembayaran {
   nominal_pembayaran Decimal  @db.Decimal(12, 2)
   tanggal_bayar      DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
   status_pembayaran  String   @default("Menunggu") @db.VarChar(30)
+  konfirmasi_customer Boolean @default(false)
   nota               nota?
   pesanan            pesanan  @relation(fields: [id_pesanan], references: [id_pesanan], onDelete: Cascade)
 }
@@ -175,6 +183,7 @@ model produk {
   stok           Int              @default(0)
   deskripsi      String?
   detail_pesanan detail_pesanan[]
+  laporan_kasir  laporan_kasir[]
   admin          admin            @relation(fields: [id_admin], references: [id_admin])
 }
 

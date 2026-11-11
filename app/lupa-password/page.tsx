@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Brand } from "../components/brand";
+import { PasswordField } from "../components/password-field";
 import { apiJson, apiRequest } from "../lib/api";
 
 export default function ForgotPasswordPage() {
@@ -101,11 +102,11 @@ export default function ForgotPasswordPage() {
             </label>
             <label className="form-field">
               <span>Password Baru</span>
-              <input autoComplete="new-password" minLength={8} name="password" placeholder="Minimal 8 karakter" required type="password" />
+              <PasswordField autoComplete="new-password" minLength={8} name="password" placeholder="Minimal 8 karakter" required />
             </label>
             <label className="form-field">
               <span>Konfirmasi Password</span>
-              <input autoComplete="new-password" minLength={8} name="confirmation" placeholder="Masukkan kembali password" required type="password" />
+              <PasswordField autoComplete="new-password" minLength={8} name="confirmation" placeholder="Masukkan kembali password" required />
             </label>
             {error ? <p className="form-error" role="alert">{error}</p> : null}
             <button className="button button-primary form-submit" disabled={isSubmitting}>

@@ -1,5 +1,5 @@
 import { prisma } from "../../../lib/prisma";
-import { ApiError, createId, handleApiError, parseDate, readJson, requiredString } from "../_lib/http";
+import { ApiError, createId, handleApiError, parseDate, positiveInteger, readJson, requiredString } from "../_lib/http";
 import { isResponse, requireSession } from "../_lib/session";
 
 type ReportType = "Penjualan" | "Stok";
@@ -15,7 +15,14 @@ function reportResponse(report: {
   jumlah_transaksi: number | null;
   total_penjualan: { toString(): string };
   status_penjualan: string;
+  id_produk: string | null;
+  stok_awal: number | null;
+  jumlah_keluar: number | null;
+  stok_akhir: number | null;
+  status_stok: string | null;
+  catatan_kasir: string | null;
   kasir: { nama_kasir: string; id_kasir: string };
+  produk: { nama_produk: string } | null;
   laporan_owner: {
     id_laporan_owner: string;
     catatan_evaluasi: string;
@@ -36,11 +43,18 @@ function reportResponse(report: {
     transactionCount: report.jumlah_transaksi ?? 0,
     totalSales: Number(report.total_penjualan),
     amount: report.jenis_laporan === "Stok"
-      ? `${report.jumlah_produk ?? 0} produk · ${report.total_stok ?? 0} item`
+      ? `${report.produk?.nama_produk ?? `${report.jumlah_produk ?? 0} produk`} · sisa ${report.stok_akhir ?? report.total_stok ?? 0} · ${report.status_stok ?? "Stok"}`
       : `${report.jumlah_transaksi ?? 0} transaksi · Rp ${new Intl.NumberFormat("id-ID").format(Number(report.total_penjualan))}`,
     status: report.status_penjualan,
     cashier: report.kasir.nama_kasir,
     cashierId: report.kasir.id_kasir,
+    productId: report.id_produk,
+    productName: report.produk?.nama_produk ?? "",
+    stockOpening: report.stok_awal,
+    stockOut: report.jumlah_keluar,
+    stockEnding: report.stok_akhir,
+    stockStatus: report.status_stok,
+    notes: report.catatan_kasir ?? "",
     evaluations: report.laporan_owner.map((evaluation) => ({
       id: evaluation.id_laporan_owner,
       note: evaluation.catatan_evaluasi,
@@ -57,6 +71,7 @@ function reportResponse(report: {
 
 const reportInclude = {
   kasir: { select: { nama_kasir: true, id_kasir: true } },
+  produk: { select: { nama_produk: true } },
   laporan_owner: {
     include: {
       owner: { select: { nama_owner: true } },
@@ -66,27 +81,62 @@ const reportInclude = {
   },
 };
 
-async function reportTotals(type: ReportType, startDate: Date, endDate: Date) {
+type ReportInput = {
+  date: Date;
+  period: string;
+  productId?: string;
+  stockOpening?: number;
+  stockOut?: number;
+  stockEnding?: number;
+  stockStatus?: "Aman" | "Menipis" | "Habis";
+  notes: string;
+  orderCount?: number;
+  productCount?: number;
+  revenue?: number;
+};
+
+function parseReportInput(body: Record<string, unknown>, type: ReportType): ReportInput {
+  const date = parseDate(body.date, "Tanggal laporan");
+  const period = new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+  const notes = typeof body.notes === "string" ? body.notes.trim() : "";
+  if (notes.length > 255) throw new ApiError("Catatan maksimal 255 karakter.", 400);
+
   if (type === "Stok") {
-    const [products, stock] = await Promise.all([
-      prisma.produk.count(),
-      prisma.produk.aggregate({ _sum: { stok: true } }),
-    ]);
-    return { jumlah_produk: products, total_stok: stock._sum.stok ?? 0, jumlah_transaksi: 0, total_penjualan: 0 };
+    const stockOpening = positiveInteger(body.stockOpening, "Stok awal");
+    const stockOut = positiveInteger(body.stockOut, "Jumlah terjual/keluar");
+    const stockEnding = positiveInteger(body.stockEnding, "Sisa stok akhir");
+    if (stockOut > stockOpening || stockOpening - stockOut !== stockEnding) {
+      throw new ApiError("Sisa stok akhir harus sama dengan stok awal dikurangi jumlah terjual/keluar.", 400);
+    }
+    if (typeof body.stockStatus !== "string" || !["Aman", "Menipis", "Habis"].includes(body.stockStatus)) {
+      throw new ApiError("Status stok tidak valid.", 400);
+    }
+    if ((stockEnding === 0) !== (body.stockStatus === "Habis")) {
+      throw new ApiError("Status Habis hanya berlaku jika sisa stok 0.", 400);
+    }
+    return {
+      date,
+      period,
+      productId: requiredString(body.productId, "Produk", 10),
+      stockOpening,
+      stockOut,
+      stockEnding,
+      stockStatus: body.stockStatus as ReportInput["stockStatus"],
+      notes,
+    };
   }
 
-  const endExclusive = new Date(endDate);
-  endExclusive.setDate(endExclusive.getDate() + 1);
-  const where = { tanggal_pesanan: { gte: startDate, lt: endExclusive }, status_pesanan: { not: "Dibatalkan" } };
-  const [count, total] = await Promise.all([
-    prisma.pesanan.count({ where }),
-    prisma.pesanan.aggregate({ where, _sum: { total_tagihan: true } }),
-  ]);
+  const revenue = Number(body.revenue);
+  if (!Number.isFinite(revenue) || revenue < 0 || revenue > 999999999999.99) {
+    throw new ApiError("Total pendapatan harus berupa nilai Rupiah yang valid.", 400);
+  }
   return {
-    jumlah_produk: 0,
-    total_stok: 0,
-    jumlah_transaksi: count,
-    total_penjualan: Number(total._sum.total_tagihan ?? 0),
+    date,
+    period,
+    orderCount: positiveInteger(body.orderCount, "Total pesanan selesai"),
+    productCount: positiveInteger(body.productCount, "Total produk terjual"),
+    revenue,
+    notes,
   };
 }
 
@@ -166,20 +216,28 @@ export async function POST(request: Request) {
     if (body.action !== "report") throw new ApiError("Aksi laporan tidak dikenal.", 400);
     if (body.type !== "Stok" && body.type !== "Penjualan") throw new ApiError("Jenis laporan tidak valid.", 400);
     const type: ReportType = body.type;
-    const startDate = parseDate(body.startDate, "Tanggal awal");
-    const endDate = parseDate(body.endDate, "Tanggal akhir");
-    if (startDate > endDate) throw new ApiError("Tanggal awal tidak boleh melewati tanggal akhir.", 400);
-    const period = requiredString(body.period, "Periode laporan", 30);
-    const totals = await reportTotals(type, startDate, endDate);
+    const input = parseReportInput(body, type);
+    if (input.productId && !(await prisma.produk.findUnique({ where: { id_produk: input.productId }, select: { id_produk: true } }))) {
+      throw new ApiError("Produk tidak ditemukan.", 404);
+    }
     const report = await prisma.laporan_kasir.create({
       data: {
         id_laporan_kasir: createId(type === "Stok" ? "RS" : "RP"),
         id_kasir: session.profileId,
-        periode_awal: startDate,
-        periode_akhir: endDate,
-        bulan_laporan: period,
+        periode_awal: input.date,
+        periode_akhir: input.date,
+        bulan_laporan: input.period,
         jenis_laporan: type,
-        ...totals,
+        jumlah_produk: type === "Stok" ? 1 : input.productCount,
+        total_stok: input.stockEnding ?? 0,
+        jumlah_transaksi: input.orderCount ?? 0,
+        total_penjualan: input.revenue ?? 0,
+        id_produk: input.productId ?? null,
+        stok_awal: input.stockOpening ?? null,
+        jumlah_keluar: input.stockOut ?? null,
+        stok_akhir: input.stockEnding ?? null,
+        status_stok: input.stockStatus ?? null,
+        catatan_kasir: input.notes || null,
         status_penjualan: "Menunggu Pemeriksaan",
       },
       include: reportInclude,
@@ -271,18 +329,27 @@ async function updateReport(request: Request) {
     const existing = await prisma.laporan_kasir.findUnique({ where: { id_laporan_kasir: id } });
     if (!existing) throw new ApiError("Laporan tidak ditemukan.", 404);
     if (existing.id_kasir !== session.profileId) throw new ApiError("Laporan ini bukan milik Kasir yang sedang masuk.", 403);
-    const startDate = parseDate(body.startDate, "Tanggal awal", existing.periode_awal);
-    const endDate = parseDate(body.endDate, "Tanggal akhir", existing.periode_akhir);
-    if (startDate > endDate) throw new ApiError("Tanggal awal tidak boleh melewati tanggal akhir.", 400);
-    const period = body.period === undefined ? existing.bulan_laporan : requiredString(body.period, "Periode laporan", 30);
-    const totals = await reportTotals(existing.jenis_laporan as ReportType, startDate, endDate);
+    const type = existing.jenis_laporan as ReportType;
+    const input = parseReportInput(body, type);
+    if (input.productId && !(await prisma.produk.findUnique({ where: { id_produk: input.productId }, select: { id_produk: true } }))) {
+      throw new ApiError("Produk tidak ditemukan.", 404);
+    }
     const report = await prisma.laporan_kasir.update({
       where: { id_laporan_kasir: id },
       data: {
-        periode_awal: startDate,
-        periode_akhir: endDate,
-        bulan_laporan: period,
-        ...totals,
+        periode_awal: input.date,
+        periode_akhir: input.date,
+        bulan_laporan: input.period,
+        jumlah_produk: type === "Stok" ? 1 : input.productCount,
+        total_stok: input.stockEnding ?? 0,
+        jumlah_transaksi: input.orderCount ?? 0,
+        total_penjualan: input.revenue ?? 0,
+        id_produk: input.productId ?? null,
+        stok_awal: input.stockOpening ?? null,
+        jumlah_keluar: input.stockOut ?? null,
+        stok_akhir: input.stockEnding ?? null,
+        status_stok: input.stockStatus ?? null,
+        catatan_kasir: input.notes || null,
       },
       include: reportInclude,
     });

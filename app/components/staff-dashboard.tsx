@@ -13,8 +13,26 @@ type StaffRole = Extract<UserRole, "admin" | "kasir" | "owner">;
 type ReportType = "Stok" | "Penjualan";
 type Product = { id: string; name: string; category: string; price: number; stock: number; description: string };
 type Customer = { id: string; name: string; phone: string; email: string; address: string; points: number };
-type Order = { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: string[]; itemDetails?: { product: string; quantity: number; subtotal: number }[] };
-type Report = { id: string; type: ReportType; period: string; amount: string; status: string; startDate?: string; endDate?: string };
+type Order = { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; customerConfirmed: boolean; items: string[]; itemDetails?: { product: string; quantity: number; subtotal: number }[] };
+type Report = {
+  id: string;
+  type: ReportType;
+  period: string;
+  amount: string;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+  productId?: string | null;
+  productName?: string;
+  stockOpening?: number | null;
+  stockOut?: number | null;
+  stockEnding?: number | null;
+  stockStatus?: string | null;
+  notes?: string;
+  orderCount?: number;
+  productCount?: number;
+  revenue?: number;
+};
 type Evaluation = { id: string; report: string; note: string; date: string };
 type Dialog = { title: string; description?: string; tone?: ModalTone; kind?: string; id?: string };
 
@@ -77,11 +95,11 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
           ? apiRequest<{ customers: Customer[] }>("/api/customer")
           : Promise.resolve({ customers: [] as Customer[] }),
         role === "kasir" || role === "owner"
-          ? apiRequest<{ orders: { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: { product: string; quantity: number; subtotal: number }[] }[]; summary: { transactionCount: number; totalSales: number; todayTransactionCount: number } }>("/api/pesanan")
-          : Promise.resolve({ orders: [] as { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; items: { product: string; quantity: number; subtotal: number }[] }[], summary: { transactionCount: 0, totalSales: 0, todayTransactionCount: 0 } }),
+          ? apiRequest<{ orders: { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; customerConfirmed: boolean; items: { product: string; quantity: number; subtotal: number }[] }[]; summary: { transactionCount: number; totalSales: number; todayTransactionCount: number } }>("/api/pesanan")
+          : Promise.resolve({ orders: [] as { id: string; receipt: string; customer: string; date: string; total: number; status: string; payment: string; paymentStatus: string; customerConfirmed: boolean; items: { product: string; quantity: number; subtotal: number }[] }[], summary: { transactionCount: 0, totalSales: 0, todayTransactionCount: 0 } }),
         role === "kasir" || role === "owner"
-          ? apiRequest<{ reports: Report[]; evaluations: { id: string; report: string; note: string; date: string }[] }>("/api/laporan")
-          : Promise.resolve({ reports: [] as Report[], evaluations: [] as { id: string; report: string; note: string; date: string }[] }),
+          ? apiRequest<{ reports: (Report & { transactionCount: number; productCount: number; totalSales: number })[]; evaluations: { id: string; report: string; note: string; date: string }[] }>("/api/laporan")
+          : Promise.resolve({ reports: [] as (Report & { transactionCount: number; productCount: number; totalSales: number })[], evaluations: [] as { id: string; report: string; note: string; date: string }[] }),
       ]);
       setProducts(productData.products);
       setCustomers(customerData.customers);
@@ -93,7 +111,12 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
         items: order.items.map((item) => `${item.product} × ${item.quantity}`),
         itemDetails: order.items,
       })));
-      setReports(reportData.reports.map((report) => ({ ...report, type: report.type as ReportType })));
+      setReports(reportData.reports.map((report) => ({
+        ...report,
+        type: report.type as ReportType,
+        orderCount: report.transactionCount,
+        revenue: report.totalSales,
+      })));
       setEvaluations(reportData.evaluations.map((item) => ({
         ...item,
         date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.date)),
@@ -226,12 +249,25 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
     const form = new FormData(event.currentTarget);
     const existingReport = reports.find((item) => item.id === dialog?.id);
     const reportType = existingReport?.type ?? (dialog?.kind === "report-stock" ? "Stok" : "Penjualan");
-    const payload = {
-      type: reportType,
-      period: String(form.get("period") ?? ""),
-      startDate: String(form.get("startDate") ?? ""),
-      endDate: String(form.get("endDate") ?? ""),
-    };
+    const payload = reportType === "Stok"
+      ? {
+          type: reportType,
+          date: String(form.get("date") ?? ""),
+          productId: String(form.get("productId") ?? ""),
+          stockOpening: Number(form.get("stockOpening")),
+          stockOut: Number(form.get("stockOut")),
+          stockEnding: Number(form.get("stockEnding")),
+          stockStatus: String(form.get("stockStatus") ?? ""),
+          notes: String(form.get("notes") ?? "").trim(),
+        }
+      : {
+          type: reportType,
+          date: String(form.get("date") ?? ""),
+          orderCount: Number(form.get("orderCount")),
+          productCount: Number(form.get("productCount")),
+          revenue: Number(form.get("revenue")),
+          notes: String(form.get("notes") ?? "").trim(),
+        };
     try {
       await apiRequest("/api/laporan", apiJson(dialog?.id ? "PUT" : "POST", dialog?.id
         ? { action: "update-report", id: dialog.id, ...payload }
@@ -346,8 +382,9 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
   }
 
   function renderPaymentValidation() {
-    const pending = orders.filter((order) => order.paymentStatus === "Menunggu");
-    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Periksa status pembayaran customer</span><h2>Validasi Pembayaran</h2></div><span className="count-badge">{pending.length} menunggu</span></div>{pending.length ? pending.map((order) => <article className="payment-review-card" key={order.id}><div className="payment-review-header"><div><span className="product-category">Pembayaran · {order.payment}</span><h3>Pesanan #{order.id}</h3><p>{order.customer} · {order.date}</p></div><strong>{money(order.total)}</strong></div><div className="payment-proof"><div aria-hidden="true" className="proof-placeholder">▧</div><div><strong>Status pembayaran</strong><span>{order.payment === "Bayar di Toko" ? "Pembayaran dilakukan di toko." : "Bukti pembayaran belum dilampirkan."}</span><span>Status: <b>Menunggu validasi</b></span></div></div><div className="payment-review-actions"><button className="button button-primary" onClick={() => void updateOrder(order.id, "Divalidasi", "Berhasil")}>Validasi Pembayaran</button><button className="button button-danger" onClick={() => setDialog({ title: "Pembayaran Ditolak", description: `Tolak pembayaran untuk pesanan #${order.id}? Customer perlu mengirim ulang bukti pembayaran.`, tone: "red", kind: "reject-payment", id: order.id })}>Tolak Pembayaran</button></div></article>) : <div className="empty-state"><span>✓</span><h3>Semua pembayaran sudah diperiksa</h3><p>Tidak ada pembayaran yang menunggu validasi.</p></div>}</section>;
+    const pending = orders.filter((order) => order.paymentStatus === "Menunggu" && order.customerConfirmed);
+    const awaitingCustomer = orders.filter((order) => order.paymentStatus === "Menunggu" && !order.customerConfirmed).length;
+    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">Periksa status pembayaran customer</span><h2>Validasi Pembayaran</h2></div><span className="count-badge">{pending.length} menunggu</span></div>{pending.length ? pending.map((order) => <article className="payment-review-card" key={order.id}><div className="payment-review-header"><div><span className="product-category">Pembayaran · {order.payment}</span><h3>Pesanan #{order.id}</h3><p>{order.customer} · {order.date}</p></div><strong>{money(order.total)}</strong></div><div className="payment-proof"><div aria-hidden="true" className="proof-placeholder">▧</div><div><strong>Status pembayaran</strong><span>{order.payment === "Bayar di Toko" ? "Pembayaran dilakukan di toko." : "Bukti pembayaran belum dilampirkan."}</span><span>Status: <b>Menunggu validasi</b></span></div></div><div className="payment-review-actions"><button className="button button-primary" onClick={() => void updateOrder(order.id, "Divalidasi", "Berhasil")}>Validasi Pembayaran</button><button className="button button-danger" onClick={() => setDialog({ title: "Pembayaran Ditolak", description: `Tolak pembayaran untuk pesanan #${order.id}? Customer perlu mengirim ulang bukti pembayaran.`, tone: "red", kind: "reject-payment", id: order.id })}>Tolak Pembayaran</button></div></article>) : <div className="empty-state"><span>✓</span><h3>Belum ada pembayaran terkonfirmasi</h3><p>{awaitingCustomer ? `${awaitingCustomer} pesanan menunggu konfirmasi dari customer.` : "Belum ada pembayaran yang menunggu validasi."}</p></div>}</section>;
   }
 
   function renderReceipt() {
@@ -362,7 +399,7 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
     const filtered = reports.filter((report) => report.type === type);
     const title = owner ? `Rekap Laporan ${type}` : `Laporan ${type === "Stok" ? "Stok" : "Penjualan"}`;
     return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">{owner ? "Tinjau dan evaluasi laporan kasir" : "Dokumentasi operasional"}</span><h2>{title}</h2></div>{!owner && role === "kasir" ? <button className="button button-primary" onClick={() => setDialog({ title: `Tambah Laporan ${type}`, kind: `report-${type.toLowerCase()}` })}>＋ Tambah</button> : null}</div><div className="report-list">
-      {filtered.map((report) => <article className="report-card" key={report.id}><div className="report-icon">{type === "Stok" ? "▧" : "↗"}</div><div className="report-main"><div className="report-title"><h3>{report.id}</h3><span className={`status-pill ${report.status === "Disetujui" ? "status-done" : ""}`}>{report.status}</span></div><p>{report.period}</p><strong>{report.amount}</strong></div><div className="report-actions">{owner ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Rekapan Laporan", description: `Tinjau rekap ${report.id} dan pilih tindakan.`, kind: "owner-report", id: report.id })}>Ubah</button><button className="button button-outline" onClick={() => setDialog({ title: "Cetak sebagai PDF", description: `Cetak rekap ${report.id} untuk arsip.`, kind: "print-report", id: report.id })}>Cetak</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : role === "kasir" ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Laporan", kind: `edit-report-${type.toLowerCase()}`, id: report.id })}>Ubah</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : null}</div></article>)}
+      {filtered.map((report) => <article className="report-card" key={report.id}><div className="report-icon">{type === "Stok" ? "▧" : "↗"}</div><div className="report-main"><div className="report-title"><h3>{report.id}</h3><span className={`status-pill ${report.status === "Disetujui" ? "status-done" : ""}`}>{report.status}</span></div><p>{report.period}</p><strong>{report.amount}</strong>{report.type === "Stok" && report.stockOpening !== null && report.stockOpening !== undefined ? <small>{report.stockOpening} awal · {report.stockOut ?? 0} keluar · {report.stockEnding ?? 0} akhir</small> : report.type === "Penjualan" ? <small>{report.productCount ?? 0} produk terjual · {money(report.revenue ?? 0)}</small> : null}{report.notes ? <small>Catatan: {report.notes}</small> : null}</div><div className="report-actions">{owner ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Rekapan Laporan", description: `Tinjau rekap ${report.id} dan pilih tindakan.`, kind: "owner-report", id: report.id })}>Ubah</button><button className="button button-outline" onClick={() => setDialog({ title: "Cetak sebagai PDF", description: `Cetak rekap ${report.id} untuk arsip.`, kind: "print-report", id: report.id })}>Cetak</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : role === "kasir" ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Laporan", kind: `edit-report-${type.toLowerCase()}`, id: report.id })}>Ubah</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : null}</div></article>)}
     </div></section>;
   }
 
@@ -401,12 +438,30 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Batal</button><button className="button button-primary" onClick={() => dialog.kind === "print-report" ? printDocument("Laporan berhasil dicetak") : void printReceipt(dialog.id ?? "")}>Cetak sebagai PDF</button></div>;
     } else if (dialog.kind === "report-stock" || dialog.kind === "report-penjualan" || dialog.kind?.startsWith("edit-report-")) {
       const report = reports.find((item) => item.id === dialog.id);
-      const isEdit = Boolean(dialog.id);
+      const reportType = report?.type ?? (dialog.kind?.includes("stock") ? "Stok" : "Penjualan");
+      const today = new Date().toISOString().slice(0, 10);
+      const reportDate = report?.startDate?.slice(0, 10) ?? today;
+      const availableProducts = products.filter((item) => getProductImage(item.id, item.name));
+      const defaultProduct = availableProducts.find((item) => item.id === report?.productId) ?? availableProducts[0];
+      const stockOpeningDefault = report?.stockOpening ?? (report ? 0 : defaultProduct?.stock ?? 0);
+      const stockEndingDefault = report?.stockEnding ?? stockOpeningDefault;
       actions = <form className="modal-form" onSubmit={submitReport}>
-        <label className="form-field"><span>Periode</span><input defaultValue={report?.period ?? new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(new Date())} name="period" required /></label>
-        <label className="form-field"><span>Tanggal awal</span><input defaultValue={report?.startDate?.slice(0, 10) ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`} name="startDate" required type="date" /></label>
-        <label className="form-field"><span>Tanggal akhir</span><input defaultValue={report?.endDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)} name="endDate" required type="date" /></label>
-        <div className="modal-actions"><button className="button button-outline" onClick={closeDialog} type="button">Batal</button><button className="button button-primary" type="submit">{isEdit ? "Simpan Perubahan" : "Tambah Laporan"}</button></div>
+        <label className="form-field"><span>Tanggal</span><input defaultValue={reportDate} name="date" required type="date" /></label>
+        {reportType === "Stok" ? <>
+          <label className="form-field"><span>Produk</span><select defaultValue={report?.productId ?? availableProducts[0]?.id ?? ""} name="productId" required>{availableProducts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="form-field"><span>Stok Awal/Tersedia</span><input defaultValue={stockOpeningDefault} min="0" name="stockOpening" required type="number" /></label>
+          <label className="form-field"><span>Jumlah Terjual/Keluar</span><input defaultValue={report?.stockOut ?? 0} min="0" name="stockOut" required type="number" /></label>
+          <label className="form-field"><span>Sisa Stok Akhir</span><input defaultValue={stockEndingDefault} min="0" name="stockEnding" required type="number" /></label>
+          <label className="form-field"><span>Status Stok</span><select defaultValue={report?.stockStatus ?? (stockEndingDefault === 0 ? "Habis" : "Aman")} name="stockStatus" required><option>Aman</option><option>Menipis</option><option>Habis</option></select></label>
+          <label className="form-field"><span>Catatan</span><textarea defaultValue={report?.notes ?? ""} maxLength={255} name="notes" rows={3} /></label>
+        </> : <>
+          <label className="form-field"><span>Total Pesanan Selesai</span><input defaultValue={report?.orderCount ?? 0} min="0" name="orderCount" required type="number" /></label>
+          <label className="form-field"><span>Total Produk Terjual</span><input defaultValue={report?.productCount ?? 0} min="0" name="productCount" required type="number" /></label>
+          <label className="form-field"><span>Total Pendapatan (Rp)</span><input defaultValue={report?.revenue ?? 0} min="0" name="revenue" required type="number" /></label>
+          <label className="form-field"><span>Catatan Kasir</span><textarea defaultValue={report?.notes ?? ""} maxLength={255} name="notes" rows={3} /></label>
+        </>}
+        {!availableProducts.length && reportType === "Stok" ? <p className="form-error">Produk untuk laporan stok belum tersedia.</p> : null}
+        <div className="modal-actions"><button className="button button-outline" onClick={closeDialog} type="button">Batal</button><button className="button button-primary" disabled={reportType === "Stok" && !availableProducts.length} type="submit">Simpan Laporan</button></div>
       </form>;
     } else if (dialog.kind === "edit-evaluation" && evaluation) {
       actions = <form className="modal-form" onSubmit={submitEvaluation}><label className="form-field"><span>Catatan evaluasi</span><textarea defaultValue={evaluation.note} name="note" required rows={4} /></label><div className="modal-actions"><button className="button button-outline" onClick={closeDialog} type="button">Batal</button><button className="button button-primary" type="submit">Simpan</button></div></form>;

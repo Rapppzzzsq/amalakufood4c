@@ -15,6 +15,7 @@ function orderResponse(order: {
   pembayaran: {
     metode_pembayaran: string;
     status_pembayaran: string;
+    konfirmasi_customer: boolean;
     nota: { no_nota: string; tanggal_cetak: Date } | null;
   } | null;
 }) {
@@ -33,6 +34,7 @@ function orderResponse(order: {
     })),
     payment: order.pembayaran?.metode_pembayaran ?? "",
     paymentStatus: order.pembayaran?.status_pembayaran ?? "",
+    customerConfirmed: order.pembayaran?.konfirmasi_customer ?? false,
     receipt: order.pembayaran?.nota?.no_nota ?? "",
     receiptDate: order.pembayaran?.nota?.tanggal_cetak ?? null,
   };
@@ -190,11 +192,32 @@ export async function POST(request: Request) {
 
 async function updateOrder(request: Request) {
   try {
-    const session = requireSession(request, ["kasir"]);
+    const session = requireSession(request, ["kasir", "customer"]);
     if (isResponse(session)) return session;
     const body = await readJson(request);
     const id = requiredString(body.id, "ID pesanan", 10);
     const action = body.action;
+
+    if (session.role === "customer") {
+      if (action !== "customer-confirm") throw new ApiError("Aksi ini hanya tersedia untuk Kasir.", 403);
+      const order = await prisma.pesanan.findUnique({
+        where: { id_pesanan: id },
+        select: {
+          id_customer: true,
+          pembayaran: { select: { status_pembayaran: true } },
+        },
+      });
+      if (!order) throw new ApiError("Pesanan tidak ditemukan.", 404);
+      if (order.id_customer !== session.profileId) throw new ApiError("Pesanan ini bukan milik Customer yang sedang masuk.", 403);
+      if (!order.pembayaran || order.pembayaran.status_pembayaran !== "Menunggu") {
+        throw new ApiError("Pesanan ini tidak sedang menunggu konfirmasi pembayaran.", 409);
+      }
+      const updated = await prisma.pembayaran.update({
+        where: { id_pesanan: id },
+        data: { konfirmasi_customer: true },
+      });
+      return Response.json({ success: true, customerConfirmed: updated.konfirmasi_customer });
+    }
 
     if (action === "print") {
       await prisma.$transaction(async (tx) => {
@@ -218,8 +241,12 @@ async function updateOrder(request: Request) {
       }
       const paymentStatus = body.status;
       const result = await prisma.$transaction(async (tx) => {
-        const order = await tx.pesanan.findUnique({ where: { id_pesanan: id }, select: { id_kasir: true } });
+        const order = await tx.pesanan.findUnique({
+          where: { id_pesanan: id },
+          select: { id_kasir: true, pembayaran: { select: { konfirmasi_customer: true } } },
+        });
         if (!order) throw new ApiError("Pesanan tidak ditemukan.", 404);
+        if (!order.pembayaran?.konfirmasi_customer) throw new ApiError("Customer belum mengonfirmasi pembayaran pesanan ini.", 409);
         await tx.pembayaran.update({
           where: { id_pesanan: id },
           data: { status_pembayaran: paymentStatus },

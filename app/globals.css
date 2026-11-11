@@ -407,6 +407,46 @@ input {
     box-shadow 150ms ease;
 }
 
+.password-input {
+  position: relative;
+  display: block;
+}
+
+.form-field .password-input input {
+  padding-right: 52px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #80540a;
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  background: #fff3cc;
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid #d7a80b;
+  outline-offset: 1px;
+}
+
+.password-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
 .form-field input::placeholder {
   color: rgb(92 44 22 / 42%);
 }
@@ -1473,10 +1513,94 @@ input {
   font-size: 1.2rem;
 }
 
-.qris-placeholder,
-.payment-instructions {
+.payment-confirmation-card {
+  display: grid;
+  gap: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: clamp(20px, 4vw, 32px);
+  border: 1px solid rgb(92 44 22 / 9%);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgb(92 44 22 / 6%);
+}
+
+.payment-reference {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 14px;
+  border-radius: 15px;
+  background: #fff9e9;
+  text-align: center;
+}
+
+.payment-reference span,
+.payment-reference small {
+  color: rgb(92 44 22 / 65%);
+  font-size: 0.75rem;
+}
+
+.payment-reference strong {
+  font-size: 1.15rem;
+}
+
+.qris-payment,
+.bank-payment,
+.store-payment {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.qris-payment h3,
+.bank-payment h3,
+.store-payment h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.qris-payment img {
+  display: block;
+  width: min(100%, 300px);
+  aspect-ratio: 1;
+  border: 1px solid rgb(92 44 22 / 12%);
+  border-radius: 14px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.qris-payment p,
+.bank-payment > p,
+.store-payment p {
+  max-width: 540px;
+  margin: 0;
+  color: rgb(92 44 22 / 70%);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.payment-amount {
+  color: #80540a;
+  font-size: 1.25rem;
+}
+
+.bank-payment {
+  justify-items: stretch;
+  text-align: left;
+}
+
+.bank-payment h3,
+.bank-account-owner {
+  text-align: center;
+}
+
+.bank-account {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 14px;
   padding: 15px;
   border: 1px solid #f0dfab;
@@ -1484,35 +1608,57 @@ input {
   background: #fff9e9;
 }
 
-.qris-symbol {
-  display: grid;
-  width: 55px;
-  height: 55px;
-  flex: 0 0 auto;
-  place-items: center;
+.bank-account > span {
+  color: rgb(92 44 22 / 72%);
+  font-size: 0.8rem;
+}
+
+.bank-account > strong {
+  flex: 1;
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.bank-account .button {
+  min-height: 38px;
+  padding: 0 11px;
+  font-size: 0.7rem;
+}
+
+.copy-notice {
+  padding: 9px 12px;
   border-radius: 10px;
-  background: #fff;
-  color: #79500a;
-  font-size: 2rem;
+  background: rgb(22 163 74 / 8%);
+  color: #166534 !important;
+  text-align: center;
 }
 
-.qris-placeholder strong,
-.qris-placeholder span,
-.payment-instructions strong,
-.payment-instructions span {
-  display: block;
+.copy-notice-error {
+  background: rgb(220 38 38 / 8%);
+  color: #b91c1c !important;
 }
 
-.qris-placeholder strong,
-.payment-instructions strong {
+.payment-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: #fff9e9;
   font-size: 0.82rem;
 }
 
-.qris-placeholder span,
-.payment-instructions span {
-  margin-top: 5px;
+.payment-total-row strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.payment-review-note {
+  margin: -10px 0 0;
   color: rgb(92 44 22 / 65%);
-  font-size: 0.73rem;
+  font-size: 0.75rem;
+  text-align: center;
 }
 
 .order-history-list {
@@ -2509,6 +2655,14 @@ input {
 
 .report-main > strong {
   font-size: 0.76rem;
+}
+
+.report-main > small {
+  display: block;
+  margin-top: 5px;
+  color: rgb(92 44 22 / 63%);
+  font-size: 0.67rem;
+  line-height: 1.45;
 }
 
 .report-actions {

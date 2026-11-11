@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { roleHome, roleLabels, UserRole } from "../lib/roles";
 import { apiJson, apiRequest } from "../lib/api";
+import { PasswordField } from "./password-field";
 
 type LoginFormProps = {
   role: UserRole;
@@ -66,13 +67,12 @@ export default function LoginForm({ role }: LoginFormProps) {
 
         <label className="form-field">
           <span>Password</span>
-          <input
+          <PasswordField
             autoComplete="current-password"
             name="password"
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Masukkan password"
             required
-            type="password"
             value={password}
           />
         </label>
