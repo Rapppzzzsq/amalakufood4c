@@ -17,6 +17,7 @@ function reportResponse(report: {
   status_penjualan: string;
   id_produk: string | null;
   stok_awal: number | null;
+  stok_masuk: number | null;
   jumlah_keluar: number | null;
   stok_akhir: number | null;
   status_stok: string | null;
@@ -51,6 +52,7 @@ function reportResponse(report: {
     productId: report.id_produk,
     productName: report.produk?.nama_produk ?? "",
     stockOpening: report.stok_awal,
+    stockIn: report.stok_masuk,
     stockOut: report.jumlah_keluar,
     stockEnding: report.stok_akhir,
     stockStatus: report.status_stok,
@@ -86,6 +88,7 @@ type ReportInput = {
   period: string;
   productId?: string;
   stockOpening?: number;
+  stockIn?: number;
   stockOut?: number;
   stockEnding?: number;
   stockStatus?: "Aman" | "Menipis" | "Habis";
@@ -103,10 +106,11 @@ function parseReportInput(body: Record<string, unknown>, type: ReportType): Repo
 
   if (type === "Stok") {
     const stockOpening = positiveInteger(body.stockOpening, "Stok awal");
+    const stockIn = positiveInteger(body.stockIn, "Stok masuk/penambahan");
     const stockOut = positiveInteger(body.stockOut, "Jumlah terjual/keluar");
     const stockEnding = positiveInteger(body.stockEnding, "Sisa stok akhir");
-    if (stockOut > stockOpening || stockOpening - stockOut !== stockEnding) {
-      throw new ApiError("Sisa stok akhir harus sama dengan stok awal dikurangi jumlah terjual/keluar.", 400);
+    if (stockOut > stockOpening + stockIn || stockOpening + stockIn - stockOut !== stockEnding) {
+      throw new ApiError("Sisa stok akhir harus sama dengan stok awal ditambah stok masuk lalu dikurangi stok keluar.", 400);
     }
     if (typeof body.stockStatus !== "string" || !["Aman", "Menipis", "Habis"].includes(body.stockStatus)) {
       throw new ApiError("Status stok tidak valid.", 400);
@@ -119,6 +123,7 @@ function parseReportInput(body: Record<string, unknown>, type: ReportType): Repo
       period,
       productId: requiredString(body.productId, "Produk", 10),
       stockOpening,
+      stockIn,
       stockOut,
       stockEnding,
       stockStatus: body.stockStatus as ReportInput["stockStatus"],
@@ -134,7 +139,7 @@ function parseReportInput(body: Record<string, unknown>, type: ReportType): Repo
     date,
     period,
     orderCount: positiveInteger(body.orderCount, "Total pesanan selesai"),
-    productCount: positiveInteger(body.productCount, "Total produk terjual"),
+    ...(body.productCount === undefined ? {} : { productCount: positiveInteger(body.productCount, "Total produk terjual") }),
     revenue,
     notes,
   };
@@ -228,12 +233,13 @@ export async function POST(request: Request) {
         periode_akhir: input.date,
         bulan_laporan: input.period,
         jenis_laporan: type,
-        jumlah_produk: type === "Stok" ? 1 : input.productCount,
+        jumlah_produk: type === "Stok" ? 1 : input.productCount ?? 0,
         total_stok: input.stockEnding ?? 0,
         jumlah_transaksi: input.orderCount ?? 0,
         total_penjualan: input.revenue ?? 0,
         id_produk: input.productId ?? null,
         stok_awal: input.stockOpening ?? null,
+        stok_masuk: input.stockIn ?? null,
         jumlah_keluar: input.stockOut ?? null,
         stok_akhir: input.stockEnding ?? null,
         status_stok: input.stockStatus ?? null,
@@ -340,12 +346,13 @@ async function updateReport(request: Request) {
         periode_awal: input.date,
         periode_akhir: input.date,
         bulan_laporan: input.period,
-        jumlah_produk: type === "Stok" ? 1 : input.productCount,
+        jumlah_produk: type === "Stok" ? 1 : input.productCount ?? existing.jumlah_produk ?? 0,
         total_stok: input.stockEnding ?? 0,
         jumlah_transaksi: input.orderCount ?? 0,
         total_penjualan: input.revenue ?? 0,
         id_produk: input.productId ?? null,
         stok_awal: input.stockOpening ?? null,
+        stok_masuk: input.stockIn ?? null,
         jumlah_keluar: input.stockOut ?? null,
         stok_akhir: input.stockEnding ?? null,
         status_stok: input.stockStatus ?? null,

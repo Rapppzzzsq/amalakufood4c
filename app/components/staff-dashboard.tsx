@@ -25,6 +25,7 @@ type Report = {
   productId?: string | null;
   productName?: string;
   stockOpening?: number | null;
+  stockIn?: number | null;
   stockOut?: number | null;
   stockEnding?: number | null;
   stockStatus?: string | null;
@@ -75,16 +76,17 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
   const [loadError, setLoadError] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [evaluationText, setEvaluationText] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
 
   const menu = dashboardMenu(role);
   const todayLabel = role === "admin" ? "Ruang kerja Amalakufood" : "Ringkasan kerja";
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (): Promise<boolean> => {
     try {
       const { user } = await apiRequest<{ user: { role: string; profileId: string; name: string; phone: string; email: string } }>("/api/auth");
       if (user.role !== role) {
         router.replace(`/login?role=${role}`);
-        return;
+        return false;
       }
       setEmployeeId(user.profileId);
       setProfile({ name: user.name, phone: user.phone, email: user.email });
@@ -121,16 +123,24 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
         ...item,
         date: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.date)),
       })));
+      return true;
     } catch (error) {
       if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
         router.replace(`/login?role=${role}`);
-        return;
+        return false;
       }
       setLoadError(error instanceof Error ? error.message : "Data tidak dapat dimuat.");
+      return false;
     } finally {
       setIsLoading(false);
     }
   }, [role, router]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -248,13 +258,14 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const existingReport = reports.find((item) => item.id === dialog?.id);
-    const reportType = existingReport?.type ?? (dialog?.kind === "report-stock" ? "Stok" : "Penjualan");
+    const reportType = existingReport?.type ?? (dialog?.kind?.endsWith("stock") || dialog?.kind?.endsWith("stok") ? "Stok" : "Penjualan");
     const payload = reportType === "Stok"
       ? {
           type: reportType,
           date: String(form.get("date") ?? ""),
           productId: String(form.get("productId") ?? ""),
           stockOpening: Number(form.get("stockOpening")),
+          stockIn: Number(form.get("stockIn")),
           stockOut: Number(form.get("stockOut")),
           stockEnding: Number(form.get("stockEnding")),
           stockStatus: String(form.get("stockStatus") ?? ""),
@@ -264,7 +275,6 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
           type: reportType,
           date: String(form.get("date") ?? ""),
           orderCount: Number(form.get("orderCount")),
-          productCount: Number(form.get("productCount")),
           revenue: Number(form.get("revenue")),
           notes: String(form.get("notes") ?? "").trim(),
         };
@@ -272,8 +282,14 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       await apiRequest("/api/laporan", apiJson(dialog?.id ? "PUT" : "POST", dialog?.id
         ? { action: "update-report", id: dialog.id, ...payload }
         : { action: "report", ...payload }));
-      await loadData();
-      setDialog({ title: dialog?.id ? "Laporan berhasil diperbarui" : "Laporan berhasil ditambahkan", tone: "green" });
+      const refreshed = await loadData();
+      setDialog(null);
+      setToast({
+        message: refreshed
+          ? dialog?.id ? "Laporan berhasil diperbarui." : "Laporan berhasil ditambahkan."
+          : "Laporan tersimpan, tetapi daftar gagal dimuat ulang.",
+        tone: refreshed ? "success" : "error",
+      });
     } catch (error) {
       setDialog({ title: "Laporan tidak dapat disimpan", description: error instanceof Error ? error.message : "Silakan coba kembali.", tone: "red" });
     }
@@ -398,8 +414,8 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
   function renderReports(type: ReportType, owner = false) {
     const filtered = reports.filter((report) => report.type === type);
     const title = owner ? `Rekap Laporan ${type}` : `Laporan ${type === "Stok" ? "Stok" : "Penjualan"}`;
-    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">{owner ? "Tinjau dan evaluasi laporan kasir" : "Dokumentasi operasional"}</span><h2>{title}</h2></div>{!owner && role === "kasir" ? <button className="button button-primary" onClick={() => setDialog({ title: `Tambah Laporan ${type}`, kind: `report-${type.toLowerCase()}` })}>＋ Tambah</button> : null}</div><div className="report-list">
-      {filtered.map((report) => <article className="report-card" key={report.id}><div className="report-icon">{type === "Stok" ? "▧" : "↗"}</div><div className="report-main"><div className="report-title"><h3>{report.id}</h3><span className={`status-pill ${report.status === "Disetujui" ? "status-done" : ""}`}>{report.status}</span></div><p>{report.period}</p><strong>{report.amount}</strong>{report.type === "Stok" && report.stockOpening !== null && report.stockOpening !== undefined ? <small>{report.stockOpening} awal · {report.stockOut ?? 0} keluar · {report.stockEnding ?? 0} akhir</small> : report.type === "Penjualan" ? <small>{report.productCount ?? 0} produk terjual · {money(report.revenue ?? 0)}</small> : null}{report.notes ? <small>Catatan: {report.notes}</small> : null}</div><div className="report-actions">{owner ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Rekapan Laporan", description: `Tinjau rekap ${report.id} dan pilih tindakan.`, kind: "owner-report", id: report.id })}>Ubah</button><button className="button button-outline" onClick={() => setDialog({ title: "Cetak sebagai PDF", description: `Cetak rekap ${report.id} untuk arsip.`, kind: "print-report", id: report.id })}>Cetak</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : role === "kasir" ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Laporan", kind: `edit-report-${type.toLowerCase()}`, id: report.id })}>Ubah</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : null}</div></article>)}
+    return <section className="staff-content-section"><div className="staff-section-heading"><div><span className="eyebrow">{owner ? "Tinjau dan evaluasi laporan kasir" : "Dokumentasi operasional"}</span><h2>{title}</h2></div>{!owner && role === "kasir" ? <button className="button button-primary" onClick={() => setDialog({ title: `Tambah Laporan ${type}`, kind: type === "Stok" ? "report-stock" : "report-penjualan" })}>＋ Tambah</button> : null}</div><div className="report-list">
+      {filtered.map((report) => <article className="report-card" key={report.id}><div className="report-icon">{type === "Stok" ? "▧" : "↗"}</div><div className="report-main"><div className="report-title"><h3>{report.id}</h3><span className={`status-pill ${report.status === "Disetujui" ? "status-done" : ""}`}>{report.status}</span></div><p>{report.period}</p><strong>{report.amount}</strong>{report.type === "Stok" && report.stockOpening !== null && report.stockOpening !== undefined ? <small>{report.stockOpening} awal · {report.stockIn ?? 0} masuk · {report.stockOut ?? 0} keluar · {report.stockEnding ?? 0} akhir</small> : report.type === "Penjualan" ? <small>{report.productCount ?? 0} produk terjual · {money(report.revenue ?? 0)}</small> : null}{report.notes ? <small>Catatan: {report.notes}</small> : null}</div><div className="report-actions">{owner ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Rekapan Laporan", description: `Tinjau rekap ${report.id} dan pilih tindakan.`, kind: "owner-report", id: report.id })}>Ubah</button><button className="button button-outline" onClick={() => setDialog({ title: "Cetak sebagai PDF", description: `Cetak rekap ${report.id} untuk arsip.`, kind: "print-report", id: report.id })}>Cetak</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : role === "kasir" ? <><button className="button button-soft" onClick={() => setDialog({ title: "Ubah Laporan", kind: `edit-report-${type.toLowerCase()}`, id: report.id })}>Ubah</button><button className="button button-danger" onClick={() => openDelete("report", report.id, "Laporan")}>Hapus</button></> : null}</div></article>)}
     </div></section>;
   }
 
@@ -436,27 +452,29 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
       actions = <div className="modal-actions modal-actions-wrap"><button className="button button-outline" onClick={() => { const reportId = dialog.id; closeDialog(); setEvaluationText(""); setView("Evaluasi Laporan"); if (reportId) setEvaluationText(`Evaluasi ${reportId}: `); }}>Evaluasi</button><button className="button button-success" onClick={() => { const report = reports.find((item) => item.id === dialog.id); if (report) approveReport(report); }}>Setujui</button></div>;
     } else if (dialog.kind === "print-report" || dialog.kind === "print-receipt") {
       actions = <div className="modal-actions"><button className="button button-outline" onClick={closeDialog}>Batal</button><button className="button button-primary" onClick={() => dialog.kind === "print-report" ? printDocument("Laporan berhasil dicetak") : void printReceipt(dialog.id ?? "")}>Cetak sebagai PDF</button></div>;
-    } else if (dialog.kind === "report-stock" || dialog.kind === "report-penjualan" || dialog.kind?.startsWith("edit-report-")) {
+    } else if (dialog.kind === "report-stock" || dialog.kind === "report-stok" || dialog.kind === "report-penjualan" || dialog.kind?.startsWith("edit-report-")) {
       const report = reports.find((item) => item.id === dialog.id);
-      const reportType = report?.type ?? (dialog.kind?.includes("stock") ? "Stok" : "Penjualan");
+      const reportType = report?.type ?? (dialog.kind?.endsWith("stock") || dialog.kind?.endsWith("stok") ? "Stok" : "Penjualan");
       const today = new Date().toISOString().slice(0, 10);
       const reportDate = report?.startDate?.slice(0, 10) ?? today;
       const availableProducts = products.filter((item) => getProductImage(item.id, item.name));
       const defaultProduct = availableProducts.find((item) => item.id === report?.productId) ?? availableProducts[0];
       const stockOpeningDefault = report?.stockOpening ?? (report ? 0 : defaultProduct?.stock ?? 0);
-      const stockEndingDefault = report?.stockEnding ?? stockOpeningDefault;
+      const stockInDefault = report?.stockIn ?? 0;
+      const stockOutDefault = report?.stockOut ?? 0;
+      const stockEndingDefault = report?.stockEnding ?? Math.max(0, stockOpeningDefault + stockInDefault - stockOutDefault);
       actions = <form className="modal-form" onSubmit={submitReport}>
         <label className="form-field"><span>Tanggal</span><input defaultValue={reportDate} name="date" required type="date" /></label>
         {reportType === "Stok" ? <>
           <label className="form-field"><span>Produk</span><select defaultValue={report?.productId ?? availableProducts[0]?.id ?? ""} name="productId" required>{availableProducts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="form-field"><span>Stok Awal/Tersedia</span><input defaultValue={stockOpeningDefault} min="0" name="stockOpening" required type="number" /></label>
-          <label className="form-field"><span>Jumlah Terjual/Keluar</span><input defaultValue={report?.stockOut ?? 0} min="0" name="stockOut" required type="number" /></label>
+          <label className="form-field"><span>Stok Masuk/Penambahan</span><input defaultValue={stockInDefault} min="0" name="stockIn" required type="number" /></label>
+          <label className="form-field"><span>Jumlah Terjual/Keluar</span><input defaultValue={stockOutDefault} min="0" name="stockOut" required type="number" /></label>
           <label className="form-field"><span>Sisa Stok Akhir</span><input defaultValue={stockEndingDefault} min="0" name="stockEnding" required type="number" /></label>
           <label className="form-field"><span>Status Stok</span><select defaultValue={report?.stockStatus ?? (stockEndingDefault === 0 ? "Habis" : "Aman")} name="stockStatus" required><option>Aman</option><option>Menipis</option><option>Habis</option></select></label>
           <label className="form-field"><span>Catatan</span><textarea defaultValue={report?.notes ?? ""} maxLength={255} name="notes" rows={3} /></label>
         </> : <>
           <label className="form-field"><span>Total Pesanan Selesai</span><input defaultValue={report?.orderCount ?? 0} min="0" name="orderCount" required type="number" /></label>
-          <label className="form-field"><span>Total Produk Terjual</span><input defaultValue={report?.productCount ?? 0} min="0" name="productCount" required type="number" /></label>
           <label className="form-field"><span>Total Pendapatan (Rp)</span><input defaultValue={report?.revenue ?? 0} min="0" name="revenue" required type="number" /></label>
           <label className="form-field"><span>Catatan Kasir</span><textarea defaultValue={report?.notes ?? ""} maxLength={255} name="notes" rows={3} /></label>
         </>}
@@ -510,6 +528,7 @@ export default function StaffDashboard({ role }: { role: StaffRole }) {
         </div>
         <footer className="staff-footer">Amalakufood · Fresh From Our Oven</footer>
       </section>
+      {toast ? <div className={`staff-toast staff-toast-${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toast.message}</div> : null}
       {renderDialog()}
     </main>
   );

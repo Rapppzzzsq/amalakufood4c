@@ -152,13 +152,16 @@ CREATE TABLE laporan_kasir (
     status_penjualan VARCHAR(30) NOT NULL DEFAULT 'Menunggu Pemeriksaan',
     id_produk VARCHAR(10) REFERENCES produk(id_produk) ON UPDATE CASCADE ON DELETE SET NULL,
     stok_awal INTEGER,
+    stok_masuk INTEGER,
     jumlah_keluar INTEGER,
     stok_akhir INTEGER,
     status_stok VARCHAR(20) CHECK (status_stok IN ('Aman', 'Menipis', 'Habis')),
     catatan_kasir VARCHAR(255),
     CHECK (stok_awal IS NULL OR stok_awal >= 0),
+    CHECK (stok_masuk IS NULL OR stok_masuk >= 0),
     CHECK (jumlah_keluar IS NULL OR jumlah_keluar >= 0),
-    CHECK (stok_akhir IS NULL OR stok_akhir >= 0)
+    CHECK (stok_akhir IS NULL OR stok_akhir >= 0),
+    CHECK (stok_awal IS NULL OR stok_masuk IS NULL OR jumlah_keluar IS NULL OR stok_akhir IS NULL OR stok_akhir = stok_awal + stok_masuk - jumlah_keluar)
 );
 
 CREATE TABLE laporan_owner (

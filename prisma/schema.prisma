@@ -94,6 +94,7 @@ model laporan_kasir {
   status_penjualan String          @default("Menunggu Pemeriksaan") @db.VarChar(30)
   id_produk        String?         @db.VarChar(10)
   stok_awal        Int?
+  stok_masuk       Int?
   jumlah_keluar    Int?
   stok_akhir       Int?
   status_stok      String?         @db.VarChar(20)
